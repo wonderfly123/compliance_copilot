@@ -39,7 +39,7 @@ const AppContent = () => {
             toggleSidebar={() => setSidebarExpanded(!sidebarExpanded)} 
           />
         )}
-        <main className={`main-content ${!isAuthenticated || loading ? 'w-full' : ''}`}>
+        <main className={`main-content ${!isAuthenticated || loading ? 'w-full' : ''} bg-gray-100 min-h-screen p-4`}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />

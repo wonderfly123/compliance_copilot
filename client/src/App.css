@@ -29,21 +29,22 @@ body {
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(255, 255, 255, 0.2);
+  width: 220px; /* Smaller sidebar width */
 }
 
 .sidebar-expanded {
-  width: 256px;
+  width: 220px;
 }
 
 .sidebar-collapsed {
-  width: 64px;
+  width: 70px; /* Wider collapsed width */
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem;
+  padding: 0.75rem 0.5rem;
   height: 64px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
@@ -55,19 +56,21 @@ body {
 }
 
 .sidebar-footer {
-  padding: 1rem;
+  padding: 0.75rem 0.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  padding: 0.75rem 0.5rem;
-  margin: 0.25rem 0.5rem;
+  padding: 0.5rem; /* Reduce padding */
+  margin: 0.2rem 0.4rem; /* Smaller margins */
+  font-size: 0.9rem; /* Smaller font size */
   border-radius: 0.25rem;
   cursor: pointer;
   text-decoration: none;
   color: var(--light-text);
+  text-align: center;
 }
 
 .nav-item:hover {
@@ -76,6 +79,17 @@ body {
 
 .nav-item.active {
   background-color: rgba(255, 255, 255, 0.3);
+}
+
+.sidebar-collapsed .nav-item.active {
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 0.25rem 0.5rem;
+  padding: 0.6rem;
+}
+
+.nav-item svg {
+  height: 1.2rem; /* Smaller icons */
+  width: 1.2rem;
 }
 
 .nav-item-icon {
@@ -111,7 +125,7 @@ body {
 }
 
 .card-header {
-  padding: 1rem;
+  padding: 0.65rem 1rem;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -119,20 +133,20 @@ body {
 }
 
 .card-body {
-  padding: 1rem;
+  padding: 0.75rem;
 }
 
 /* Dashboard metrics styles */
 .metrics-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
   margin-bottom: 1.5rem;
 }
 
 .metric-card {
   border: 1px solid var(--border-color);
-  padding: 1rem;
+  padding: 0.75rem;
   border-radius: 0.25rem;
 }
 
@@ -144,7 +158,7 @@ body {
 }
 
 .metric-title {
-  font-size: 0.875rem;
+  font-size: 0.8rem; /* Smaller titles and descriptions */
   color: #4b5563;
   font-weight: 500;
 }
@@ -159,18 +173,18 @@ body {
 }
 
 .metric-value {
-  font-size: 1.875rem;
+  font-size: 1.5rem; /* Smaller metric value */
   font-weight: 700;
   margin: 0.5rem 0;
 }
 
 .metric-description {
-  font-size: 0.75rem;
+  font-size: 0.8rem; /* Smaller titles and descriptions */
 }
 
 /* Plan list styles */
 .plan-item {
-  padding: 0.75rem 0;
+  padding: 0.5rem 0;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -471,6 +485,16 @@ body {
 
 .text-center {
   text-align: center;
+}
+
+/* Make everything more compact */
+h2.text-2xl {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+p {
+  font-size: 0.9rem;
 }
 
 .mt-1 {
