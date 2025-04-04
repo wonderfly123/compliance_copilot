@@ -220,6 +220,7 @@ body {
   border-radius: 0.25rem;
 }
 
+/* Plan status styles */
 .status-draft {
   background-color: #fef3c7;
   color: #92400e;
@@ -238,6 +239,67 @@ body {
 .status-needs-review {
   background-color: #fee2e2;
   color: #b91c1c;
+}
+
+/* Plan type styles */
+.plan-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.type-eop {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.type-hmp {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.type-coop {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+}
+
+.type-iap {
+  background-color: #fef9c3;
+  color: #854d0e;
+}
+
+.type-aar {
+  background-color: #ffedd5;
+  color: #9a3412;
+}
+
+.type-custom {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+/* Reference document type styles */
+.reference-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.type-federal {
+  background-color: #bfdbfe;
+  color: #1e40af;
+}
+
+.type-state {
+  background-color: #bbf7d0;
+  color: #15803d;
+}
+
+.type-technical {
+  background-color: #ddd6fe;
+  color: #5b21b6;
 }
 
 .compliance-bar {

@@ -20,7 +20,7 @@ const Dashboard = () => {
         setLoading(true);
         // Use temporary data while API endpoint is being completed
         // In production, this will be replaced with actual API call
-        // const response = await axios.get('/api/documents/metrics');
+        // const response = await axios.get('/api/plans/metrics');
         // setDashboardData(response.data.data);
         
         // Temporary data for development

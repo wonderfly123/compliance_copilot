@@ -1,12 +1,12 @@
 const express = require('express');
 const { 
-  getDocuments, 
-  getDocument, 
-  createDocument, 
-  updateDocument, 
-  deleteDocument,
+  getPlans, 
+  getPlan, 
+  createPlan, 
+  updatePlan, 
+  deletePlan,
   getMetrics
-} = require('../controllers/documentController');
+} = require('../controllers/plansController');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -19,12 +19,12 @@ router.get('/metrics', getMetrics);
 
 // Standard CRUD routes
 router.route('/')
-  .get(getDocuments)
-  .post(createDocument);
+  .get(getPlans)
+  .post(createPlan);
 
 router.route('/:id')
-  .get(getDocument)
-  .put(updateDocument)
-  .delete(deleteDocument);
+  .get(getPlan)
+  .put(updatePlan)
+  .delete(deletePlan);
 
 module.exports = router;

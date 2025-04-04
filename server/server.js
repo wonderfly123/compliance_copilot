@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const fileUpload = require('express-fileupload');
 const connectDB = require('./config/db');
 
 // Load environment variables
@@ -15,10 +16,16 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(fileUpload({
+  useTempFiles: true,
+  tempFileDir: '/tmp/',
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB max file size
+}));
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/documents', require('./routes/documentRoutes'));
+app.use('/api/plans', require('./routes/plansRoutes'));
+app.use('/api/references', require('./routes/referenceRoutes'));
 
 // Basic route
 app.get('/', (req, res) => {

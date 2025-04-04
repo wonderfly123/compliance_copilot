@@ -16,7 +16,7 @@ exports.register = async (req, res) => {
     const { name, email, password } = req.body;
 
     // Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findByEmail(email);
 
     if (userExists) {
       return res.status(400).json({ success: false, error: 'User already exists' });
@@ -30,15 +30,13 @@ exports.register = async (req, res) => {
     });
 
     if (user) {
+      // Remove password from response
+      const { password, ...userWithoutPassword } = user;
+      
       res.status(201).json({
         success: true,
-        user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        },
-        token: generateToken(user._id)
+        user: userWithoutPassword,
+        token: generateToken(user.id)
       });
     }
   } catch (error) {
@@ -54,28 +52,26 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     // Check for user
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findByEmail(email);
 
     if (!user) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
     // Check if password matches
-    const isMatch = await user.matchPassword(password);
+    const isMatch = await User.matchPassword(user, password);
 
     if (!isMatch) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
+    // Remove password from response
+    const { password: userPassword, ...userWithoutPassword } = user;
+    
     res.json({
       success: true,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      },
-      token: generateToken(user._id)
+      user: userWithoutPassword,
+      token: generateToken(user.id)
     });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
@@ -89,14 +85,16 @@ exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
 
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Remove password from response
+    const { password, ...userWithoutPassword } = user;
+    
     res.json({
       success: true,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
+      user: userWithoutPassword
     });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });

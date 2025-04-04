@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
-import Documents from './pages/Documents';
+import ReferenceDocuments from './pages/ReferenceDocuments';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Sidebar from './components/layout/Sidebar';
@@ -45,7 +45,7 @@ const AppContent = () => {
             <Route path="/register" element={<Register />} />
             <Route element={<PrivateRoute />}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/documents" element={<Documents />} />
+              <Route path="/references" element={<ReferenceDocuments />} />
             </Route>
           </Routes>
         </main>

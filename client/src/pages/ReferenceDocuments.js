@@ -2,50 +2,50 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Copilot from '../components/copilot/Copilot';
 
-const Documents = () => {
-  const [documents, setDocuments] = useState([]);
+const ReferenceDocuments = () => {
+  const [referenceDocuments, setReferenceDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [documentType, setDocumentType] = useState('All Types');
+  const [referenceType, setReferenceType] = useState('All Types');
 
-  // Fetch documents from the API
+  // Fetch reference documents from the API
   useEffect(() => {
-    const fetchDocuments = async () => {
+    const fetchReferenceDocuments = async () => {
       try {
         setLoading(true);
         // In production, this will be replaced with actual API call
-        // const response = await axios.get('/api/documents');
-        // setDocuments(response.data.data);
+        // const response = await axios.get('/api/references');
+        // setReferenceDocuments(response.data.data);
         
         // Temporary data for development
-        setDocuments([
-          { id: 1, title: 'Marin County EOP 2025', uploadDate: '2025-03-15', status: 'In Review', type: 'EOP' },
-          { id: 2, title: 'City of Oakland Hazard Mitigation Plan', uploadDate: '2025-02-28', status: 'Draft', type: 'HMP' },
-          { id: 3, title: 'Bay Area Regional Emergency Communications Plan', uploadDate: '2025-03-10', status: 'Final', type: 'Regional Plan' },
-          { id: 4, title: 'San Mateo County Evacuation Plan', uploadDate: '2024-12-05', status: 'Needs Review', type: 'EOP' },
-          { id: 5, title: 'Berkeley Wildfire Preparedness Plan', uploadDate: '2025-02-12', status: 'In Review', type: 'HMP' }
+        setReferenceDocuments([
+          { id: 1, title: 'FEMA CPG 101', uploadDate: '2025-03-15', status: 'Active', type: 'Federal Guide' },
+          { id: 2, title: 'NIMS 2025 Edition', uploadDate: '2025-02-28', status: 'Active', type: 'Federal Doc' },
+          { id: 3, title: 'Cal OES Planning Guide', uploadDate: '2025-03-10', status: 'Active', type: 'State Guide' },
+          { id: 4, title: 'FEMA ESF 8 Guidance', uploadDate: '2024-12-05', status: 'Active', type: 'Federal Guide' },
+          { id: 5, title: 'Wildfire Planning Technical Guide', uploadDate: '2025-02-12', status: 'Active', type: 'Technical Guide' }
         ]);
         setLoading(false);
       } catch (error) {
-        console.error('Error fetching documents:', error);
-        setError('Failed to load documents. Please try again.');
+        console.error('Error fetching reference documents:', error);
+        setError('Failed to load reference documents. Please try again.');
         setLoading(false);
       }
     };
 
-    fetchDocuments();
+    fetchReferenceDocuments();
   }, []);
 
-  // Filter documents based on search term and type
-  const filteredDocuments = documents.filter(doc => {
+  // Filter reference documents based on search term and type
+  const filteredReferenceDocuments = referenceDocuments.filter(doc => {
     const matchesSearchTerm = doc.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDocumentType = documentType === 'All Types' || doc.type === documentType;
-    return matchesSearchTerm && matchesDocumentType;
+    const matchesReferenceType = referenceType === 'All Types' || doc.type === referenceType;
+    return matchesSearchTerm && matchesReferenceType;
   });
 
   if (loading) {
-    return <div className="content-area">Loading documents...</div>;
+    return <div className="content-area">Loading reference documents...</div>;
   }
 
   if (error) {
@@ -55,28 +55,28 @@ const Documents = () => {
   return (
     <div className="content-area">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Document Library</h2>
+        <h2 className="text-2xl font-bold">Reference Document Library</h2>
         <button 
           className="btn flex items-center"
         >
           <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
-          Upload Document
+          Upload Reference Document
         </button>
       </div>
       
       <div className="card">
         <div className="card-header">
           <div className="flex items-center">
-            <h3 className="text-lg font-medium">My Documents</h3>
-            <span className="ml-2 bg-gray-100 text-gray-700 py-1 px-2 text-xs">{filteredDocuments.length}</span>
+            <h3 className="text-lg font-medium">Reference Documents</h3>
+            <span className="ml-2 bg-gray-100 text-gray-700 py-1 px-2 text-xs">{filteredReferenceDocuments.length}</span>
           </div>
           <div className="flex space-x-2">
             <div className="relative">
               <input 
                 type="text" 
-                placeholder="Search documents..." 
+                placeholder="Search reference documents..." 
                 className="form-input"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -90,50 +90,49 @@ const Documents = () => {
             </div>
             <select 
               className="form-input"
-              value={documentType}
-              onChange={(e) => setDocumentType(e.target.value)}
+              value={referenceType}
+              onChange={(e) => setReferenceType(e.target.value)}
             >
               <option>All Types</option>
-              <option>EOP</option>
-              <option>HMP</option>
-              <option>COOP</option>
-              <option>Regional Plan</option>
+              <option>Federal Guide</option>
+              <option>Federal Doc</option>
+              <option>State Guide</option>
+              <option>Technical Guide</option>
             </select>
           </div>
         </div>
         
         <div className="overflow-x-auto">
-          {filteredDocuments.length > 0 ? (
+          {filteredReferenceDocuments.length > 0 ? (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Document Title</th>
+                  <th>Reference Title</th>
                   <th>Type</th>
                   <th>Uploaded</th>
-                  <th>Status</th>
+                  <th>Category</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredDocuments.map((doc) => (
+                {filteredReferenceDocuments.map((doc) => (
                   <tr key={doc.id}>
                     <td className="font-medium">{doc.title}</td>
                     <td>{doc.type}</td>
                     <td>{doc.uploadDate}</td>
                     <td>
-                      <span className={`plan-status ${
-                        doc.status === 'Final' ? 'status-final' : 
-                        doc.status === 'In Review' ? 'status-review' : 
-                        doc.status === 'Needs Review' ? 'status-needs-review' :
-                        'status-draft'
+                      <span className={`reference-type ${
+                        doc.type === 'Federal Guide' ? 'type-federal' : 
+                        doc.type === 'State Guide' ? 'type-state' : 
+                        'type-technical'
                       }`}>
-                        {doc.status}
+                        {doc.type}
                       </span>
                     </td>
                     <td>
                       <button className="text-blue-600 hover:text-blue-900 mr-2">View</button>
                       <button className="text-blue-600 hover:text-blue-900 mr-2">Edit</button>
-                      <button className="text-blue-600 hover:text-blue-900">Analyze</button>
+                      <button className="text-blue-600 hover:text-blue-900">Search</button>
                     </td>
                   </tr>
                 ))}
@@ -144,8 +143,8 @@ const Documents = () => {
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium">No documents found</h3>
-              <p className="mt-1 text-sm">Try changing your search or filter criteria, or upload a new document.</p>
+              <h3 className="mt-2 text-sm font-medium">No reference documents found</h3>
+              <p className="mt-1 text-sm">Try changing your search or filter criteria, or upload a new reference document.</p>
               <div className="mt-6">
                 <button 
                   className="btn flex items-center mx-auto"
@@ -153,7 +152,7 @@ const Documents = () => {
                   <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
-                  Upload a document
+                  Upload a reference document
                 </button>
               </div>
             </div>
@@ -167,4 +166,4 @@ const Documents = () => {
   );
 };
 
-export default Documents;
+export default ReferenceDocuments;
