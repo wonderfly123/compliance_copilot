@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Copilot from '../components/copilot/Copilot';
 
@@ -8,17 +8,47 @@ const ReferenceDocuments = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [referenceType, setReferenceType] = useState('All Types');
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [referenceForm, setReferenceForm] = useState({
+    title: '',
+    description: '',
+    type: 'Federal Guide',
+    tags: [],
+    sourceOrg: '',
+    authorityLevel: 'guideline'
+  });
+  const fileInputRef = useRef(null);
 
   // Fetch reference documents from the API
   useEffect(() => {
     const fetchReferenceDocuments = async () => {
       try {
         setLoading(true);
-        // In production, this will be replaced with actual API call
-        // const response = await axios.get('/api/references');
-        // setReferenceDocuments(response.data.data);
+        // Get references from API
+        const response = await axios.get('/api/references');
+        if (response.data.data && response.data.data.length > 0) {
+          setReferenceDocuments(response.data.data);
+        } else {
+          // Empty array returned - no documents yet
+          console.log('No reference documents found');
+          // Just set empty array, we'll handle this in the UI
+          setReferenceDocuments([]);
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching reference documents:', error);
+        // Don't show error for 404 when no reference documents exist yet
+        if (error.response && error.response.status === 404) {
+          console.log('No reference documents found - 404 response');
+          setReferenceDocuments([]);
+        } else {
+          setError('There was an error connecting to the server. Using demo mode.');
+        }
+        setLoading(false);
         
-        // Temporary data for development
+        // Always use mock data if API fails
+        console.log('Using mock data for development/demo mode');
         setReferenceDocuments([
           { id: 1, title: 'FEMA CPG 101', uploadDate: '2025-03-15', status: 'Active', type: 'Federal Guide' },
           { id: 2, title: 'NIMS 2025 Edition', uploadDate: '2025-02-28', status: 'Active', type: 'Federal Doc' },
@@ -26,21 +56,95 @@ const ReferenceDocuments = () => {
           { id: 4, title: 'FEMA ESF 8 Guidance', uploadDate: '2024-12-05', status: 'Active', type: 'Federal Guide' },
           { id: 5, title: 'Wildfire Planning Technical Guide', uploadDate: '2025-02-12', status: 'Active', type: 'Technical Guide' }
         ]);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching reference documents:', error);
-        setError('Failed to load reference documents. Please try again.');
-        setLoading(false);
       }
     };
 
     fetchReferenceDocuments();
   }, []);
+  
+  // Handle form input changes
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setReferenceForm({ ...referenceForm, [name]: value });
+  };
+  
+  // Handle file upload
+  const handleUploadReference = async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData();
+    const file = fileInputRef.current.files[0];
+    
+    if (!file) {
+      setError('Please select a file to upload');
+      return;
+    }
+    
+    if (!referenceForm.title) {
+      setError('Please enter a reference document title');
+      return;
+    }
+    
+    try {
+      setUploadLoading(true);
+      
+      // Append form data
+      formData.append('file', file);
+      formData.append('title', referenceForm.title);
+      formData.append('description', referenceForm.description);
+      formData.append('type', referenceForm.type);
+      formData.append('sourceOrg', referenceForm.sourceOrg);
+      formData.append('authorityLevel', referenceForm.authorityLevel);
+      formData.append('tags', JSON.stringify(referenceForm.tags));
+      
+      // Make API request
+      const response = await axios.post('/api/references/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      // Close modal and refresh reference list
+      setUploadModalOpen(false);
+      setUploadLoading(false);
+      
+      // Reset form
+      setReferenceForm({
+        title: '',
+        description: '',
+        type: 'Federal Guide',
+        tags: [],
+        sourceOrg: '',
+        authorityLevel: 'guideline'
+      });
+      
+      // Fetch reference documents again to update the list
+      const fetchReferenceDocumentsAgain = async () => {
+        try {
+          setLoading(true);
+          const response = await axios.get('/api/references');
+          setReferenceDocuments(response.data.data);
+          setLoading(false);
+        } catch (error) {
+          console.error('Error fetching reference documents:', error);
+          setLoading(false);
+        }
+      };
+      fetchReferenceDocumentsAgain();
+      
+    } catch (error) {
+      console.error('Error uploading reference document:', error);
+      setUploadLoading(false);
+      setError(error.response?.data?.message || 'Failed to upload reference document. Please try again.');
+    }
+  };
 
   // Filter reference documents based on search term and type
   const filteredReferenceDocuments = referenceDocuments.filter(doc => {
-    const matchesSearchTerm = doc.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesReferenceType = referenceType === 'All Types' || doc.type === referenceType;
+    const matchesSearchTerm = 
+      doc?.title?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
+    const matchesReferenceType = 
+      referenceType === 'All Types' || doc?.type === referenceType;
     return matchesSearchTerm && matchesReferenceType;
   });
 
@@ -48,7 +152,7 @@ const ReferenceDocuments = () => {
     return <div className="content-area">Loading reference documents...</div>;
   }
 
-  if (error) {
+  if (error && error !== 'Upload your first reference document') {
     return <div className="content-area text-red-600">{error}</div>;
   }
 
@@ -58,6 +162,7 @@ const ReferenceDocuments = () => {
         <h2 className="text-2xl font-bold">Reference Document Library</h2>
         <button 
           className="btn flex items-center"
+          onClick={() => setUploadModalOpen(true)}
         >
           <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -143,11 +248,12 @@ const ReferenceDocuments = () => {
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium">No reference documents found</h3>
-              <p className="mt-1 text-sm">Try changing your search or filter criteria, or upload a new reference document.</p>
+              <h3 className="mt-2 text-lg font-medium">{referenceDocuments.length === 0 ? "Get started by uploading your first reference document" : "No reference documents found"}</h3>
+              <p className="mt-1 text-sm">{referenceDocuments.length === 0 ? "Upload standards and guides to check your plans against for compliance" : "Try changing your search or filter criteria, or upload a new reference document."}</p>
               <div className="mt-6">
                 <button 
                   className="btn flex items-center mx-auto"
+                  onClick={() => setUploadModalOpen(true)}
                 >
                   <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -162,6 +268,137 @@ const ReferenceDocuments = () => {
       
       {/* Copilot component */}
       <Copilot />
+      
+      {/* Upload Modal */}
+      {uploadModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 relative">
+            <button 
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+              onClick={() => setUploadModalOpen(false)}
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <h2 className="text-xl font-semibold mb-4">Upload Reference Document</h2>
+            
+            <form onSubmit={handleUploadReference}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Document Title</label>
+                  <input 
+                    type="text" 
+                    name="title"
+                    value={referenceForm.title}
+                    onChange={handleInputChange}
+                    className="form-input w-full"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Document Type</label>
+                  <select 
+                    name="type"
+                    value={referenceForm.type}
+                    onChange={handleInputChange}
+                    className="form-input w-full"
+                  >
+                    <option value="Federal Guide">Federal Guide</option>
+                    <option value="Federal Doc">Federal Document</option>
+                    <option value="State Guide">State Guide</option>
+                    <option value="Technical Guide">Technical Guide</option>
+                    <option value="Standard">Standard</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Source Organization</label>
+                  <input 
+                    type="text" 
+                    name="sourceOrg"
+                    value={referenceForm.sourceOrg}
+                    onChange={handleInputChange}
+                    className="form-input w-full"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Authority Level</label>
+                  <select 
+                    name="authorityLevel"
+                    value={referenceForm.authorityLevel}
+                    onChange={handleInputChange}
+                    className="form-input w-full"
+                  >
+                    <option value="guideline">Guideline</option>
+                    <option value="requirement">Requirement</option>
+                    <option value="regulation">Regulation</option>
+                  </select>
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea 
+                    name="description"
+                    value={referenceForm.description}
+                    onChange={handleInputChange}
+                    className="form-input w-full"
+                    rows="3"
+                  ></textarea>
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Upload Document</label>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    className="form-input w-full"
+                    accept=".pdf,.doc,.docx,.txt,.md,.json"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Accepted formats: PDF, Word, Text, Markdown, JSON (Max 20MB)
+                  </p>
+                </div>
+              </div>
+              
+              {error && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4">
+                  {error}
+                </div>
+              )}
+              
+              <div className="flex justify-end space-x-3">
+                <button 
+                  type="button"
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md"
+                  onClick={() => setUploadModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="btn"
+                  disabled={uploadLoading}
+                >
+                  {uploadLoading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Uploading...
+                    </>
+                  ) : 'Upload Document'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

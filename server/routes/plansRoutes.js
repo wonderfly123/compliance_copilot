@@ -1,30 +1,28 @@
+// server/routes/plansRoutes.js
 const express = require('express');
-const { 
-  getPlans, 
-  getPlan, 
-  createPlan, 
-  updatePlan, 
-  deletePlan,
-  getMetrics
-} = require('../controllers/plansController');
-const { protect } = require('../middleware/auth');
-
 const router = express.Router();
+const { protect } = require('../middleware/auth'); // Using your existing auth middleware name
+const plansController = require('../controllers/plansController');
 
 // Apply authentication middleware to all routes
 router.use(protect);
 
-// Get metrics route
-router.get('/metrics', getMetrics);
+// Get metrics route (keeping your existing endpoint)
+router.get('/metrics', plansController.getMetrics);
 
 // Standard CRUD routes
 router.route('/')
-  .get(getPlans)
-  .post(createPlan);
+  .get(plansController.getPlans) // Using the existing controller function name
+  .post(plansController.createPlan); // Keeping your existing createPlan endpoint
 
 router.route('/:id')
-  .get(getPlan)
-  .put(updatePlan)
-  .delete(deletePlan);
+  .get(plansController.getPlan)
+  .put(plansController.updatePlan)
+  .delete(plansController.deletePlan);
+
+// New routes for plan upload, analysis and suggestions
+router.post('/upload', plansController.uploadPlan);
+router.get('/:planId/analysis', plansController.getPlanAnalysis);
+router.get('/:planId/suggestions', plansController.getPlanSuggestions);
 
 module.exports = router;

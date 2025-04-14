@@ -1,11 +1,19 @@
+// server/routes/authRoutes.js
 const express = require('express');
-const { register, login, getMe } = require('../controllers/authController');
+const router = express.Router();
+const authController = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 
-const router = express.Router();
+// Register new user
+router.post('/register', authController.register);
 
-router.post('/register', register);
-router.post('/login', login);
-router.get('/me', protect, getMe);
+// Log in user
+router.post('/login', authController.login);
+
+// Get current user
+router.get('/user', protect, authController.getUser);
+
+// Log out user
+router.post('/logout', protect, authController.logout);
 
 module.exports = router;

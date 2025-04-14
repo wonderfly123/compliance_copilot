@@ -1,14 +1,18 @@
+// server/config/supabase.js
 const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
+
+// Create real Supabase client with your credentials
+const supabaseUrl = 'https://ehazvybmhkfrmoyukiqy.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoYXp2eWJtaGtmcm1veXVraXF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzAzOTAsImV4cCI6MjA1OTM0NjM5MH0.WEA_iFoFXdql8fYaXtd8bFw8kn_8IeyiRYMQQ8Q0DY0'
 
 // Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false
+  }
+});
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Supabase URL or Key is missing in environment variables');
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+console.log('Supabase client initialized with public anon key');
 
 module.exports = supabase;

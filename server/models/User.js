@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { supabase } = require('../config/db');
+const { supabase } = require('../config/supabase');
 
 const User = {
   // Find user by email

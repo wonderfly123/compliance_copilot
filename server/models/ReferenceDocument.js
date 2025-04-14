@@ -102,7 +102,7 @@ const ReferenceDocument = {
   async uploadFile(file, filePath) {
     const { data, error } = await supabase
       .storage
-      .from('reference_documents')
+      .from('reference-documents')
       .upload(filePath, file, {
         cacheControl: '3600',
         upsert: false
@@ -115,7 +115,7 @@ const ReferenceDocument = {
     // Get public URL
     const { data: urlData } = supabase
       .storage
-      .from('reference_documents')
+      .from('reference-documents')
       .getPublicUrl(filePath);
     
     return urlData.publicUrl;

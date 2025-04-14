@@ -1,80 +1,84 @@
 -- Schema for Compliance Copilot using Supabase PostgreSQL
--- This file contains the SQL statements to create the tables and functions
--- needed for the application
+-- This schema defines the database structure for an emergency management compliance application
+-- The system stores plans, reference documents, and performs gap analysis between them
+-- Key components:
+--   1. Documents: Stores both plans and reference documents in a unified table
+--   2. Vector Embeddings: Stores text chunks with vector embeddings for semantic search
+--   3. Plan Analysis: Stores results of AI-driven gap analysis between plans and reference documents
 
--- Enable pgvector extension
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS vector;     -- For vector similarity search using pgvector
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; -- For UUID generation
 
 -- Create users table
+-- Stores user account information for authentication and authorization
 CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), -- Unique identifier for users
+  name TEXT NOT NULL,                            -- Full name of the user
+  email TEXT NOT NULL UNIQUE,                    -- Email address (used for login)
+  password TEXT NOT NULL,                        -- Hashed password (never store plain text)
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')), -- User role for access control
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()                    -- Account creation timestamp
 );
 
--- Create plans table
-CREATE TABLE IF NOT EXISTS plans (
+-- Documents Table - For both reference documents and plans
+-- Unified table that stores metadata for both emergency management plans and reference documents
+CREATE TABLE IF NOT EXISTS documents (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  title TEXT NOT NULL,
-  description TEXT,
-  type TEXT NOT NULL CHECK (type IN ('EOP', 'HMP', 'COOP', 'IAP', 'AAR', 'Other')),
-  status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'In Review', 'Final', 'Needs Review')),
-  location TEXT NOT NULL,
-  compliance_score INTEGER DEFAULT 0 CHECK (compliance_score >= 0 AND compliance_score <= 100),
-  critical_sections INTEGER DEFAULT 0,
-  expiration_date TIMESTAMP WITH TIME ZONE,
-  file_url TEXT,
-  last_analyzed TIMESTAMP WITH TIME ZONE,
-  owner UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  document_type VARCHAR(20) NOT NULL, -- Document category: 'reference' or 'plan'
+  doc_subtype VARCHAR(50) NOT NULL,   -- Specific type: 'EOP', 'HMP', 'COOP', 'standard', 'guideline', etc.
+  title VARCHAR(255) NOT NULL,        -- Document title
+  description TEXT,                   -- Document description or summary
+  status VARCHAR(20),                 -- Document status: 'draft', 'in_review', 'active', 'archived'
+  user_id UUID REFERENCES users(id),  -- User who uploaded/created the document
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- Creation timestamp
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- Last modification timestamp
+  tags TEXT[],                        -- Array of tags for categorization and filtering
+  version INTEGER DEFAULT 1,          -- Document version number
+  department VARCHAR(100),            -- Department responsible for the document (for plans)
+  source_org VARCHAR(255),            -- Source organization (for reference documents)
+  pub_date DATE,                      -- Publication date
+  authority_level VARCHAR(50),        -- For reference docs: 'guideline', 'requirement', 'regulation'
+  last_review_date DATE,              -- Date when document was last reviewed
+  next_review_date DATE,              -- Date when document needs to be reviewed next
+  owner VARCHAR(100),                 -- Person responsible for the document
+  compliance_score NUMERIC(5,2),      -- Overall compliance score (for plans only)
+  file_url TEXT,                      -- Path to the uploaded file in storage
+  metadata JSONB                      -- Flexible storage for additional document metadata
 );
 
--- Create reference_documents table
-CREATE TABLE IF NOT EXISTS reference_documents (
+-- Vector Embeddings Table - Stores chunked content with vector embeddings
+-- This table contains text chunks from documents with their vector embeddings for semantic search
+CREATE TABLE IF NOT EXISTS vector_embeddings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  title TEXT NOT NULL,
-  type TEXT NOT NULL,
-  category TEXT,
-  description TEXT,
-  source TEXT,
-  publication_date TIMESTAMP WITH TIME ZONE,
-  file_url TEXT,
-  is_embedded BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create reference_embeddings table for vector search
-CREATE TABLE IF NOT EXISTS reference_embeddings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  reference_id UUID NOT NULL REFERENCES reference_documents(id) ON DELETE CASCADE,
-  chunk_text TEXT NOT NULL,
-  chunk_id INTEGER NOT NULL,
-  embedding VECTOR(1536), -- Assuming OpenAI embeddings with 1536 dimensions
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  document_id UUID REFERENCES documents(id) ON DELETE CASCADE, -- Link to parent document
+  content TEXT NOT NULL,             -- The actual text chunk content
+  embedding VECTOR(1536),            -- Vector embedding (1536 dimensions for OpenAI's ada-002 model)
+  metadata JSONB,                    -- Additional context about the chunk (section title, importance, etc.)
+  chunk_index INTEGER,               -- Position of this chunk in the original document
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() -- Creation timestamp
 );
 
 -- Create index for vector search
-CREATE INDEX IF NOT EXISTS reference_embeddings_idx ON reference_embeddings 
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
+-- This optimizes vector similarity search performance using the IVFFlat algorithm
+CREATE INDEX IF NOT EXISTS vector_embeddings_idx ON vector_embeddings 
+USING ivfflat (embedding vector_cosine_ops) -- Use cosine similarity for comparison
+WITH (lists = 100);                        -- Number of lists for partitioning the vector space
 
 -- Create function for vector similarity search
+-- This is a PL/pgSQL function for semantic search in the vector database
 CREATE OR REPLACE FUNCTION match_references(
-  query_embedding VECTOR(1536),
-  match_threshold FLOAT,
-  match_count INT
+  query_embedding VECTOR(1536),       -- Input embedding vector to search against
+  match_threshold FLOAT,              -- Minimum similarity score (0.0 to 1.0) to include in results
+  match_count INT                     -- Maximum number of matching results to return
 )
 RETURNS TABLE (
-  id UUID,
-  reference_id UUID,
-  chunk_text TEXT,
-  chunk_id INTEGER,
-  similarity FLOAT
+  id UUID,                            -- Embedding ID
+  document_id UUID,                   -- Parent document ID
+  content TEXT,                       -- Text content of the chunk
+  chunk_index INTEGER,                -- Position in document
+  metadata JSONB,                     -- Additional metadata about the chunk
+  similarity FLOAT                    -- Similarity score (higher is better)
 )
 LANGUAGE plpgsql
 AS $$
@@ -82,79 +86,127 @@ BEGIN
   RETURN QUERY
   SELECT
     e.id,
-    e.reference_id,
-    e.chunk_text,
-    e.chunk_id,
-    1 - (e.embedding <=> query_embedding) AS similarity
-  FROM reference_embeddings e
-  WHERE 1 - (e.embedding <=> query_embedding) > match_threshold
-  ORDER BY similarity DESC
-  LIMIT match_count;
+    e.document_id,
+    e.content,
+    e.chunk_index,
+    e.metadata,
+    1 - (e.embedding <=> query_embedding) AS similarity  -- Convert distance to similarity score
+  FROM vector_embeddings e
+  WHERE 1 - (e.embedding <=> query_embedding) > match_threshold  -- Filter by threshold
+  ORDER BY similarity DESC   -- Return most similar results first
+  LIMIT match_count;         -- Limit number of results
 END;
 $$;
 
--- Create storage buckets
--- Note: This must be done through the Supabase dashboard or API,
--- but included here for completeness
--- 1. Create a bucket named 'plans' for plan documents
--- 2. Create a bucket named 'reference_documents' for reference materials
-
--- Create plans_sections table for detailed section-by-section compliance tracking
-CREATE TABLE IF NOT EXISTS plan_sections (
+-- Gap Analysis Results Table
+-- Stores the results of automated compliance gap analysis performed on plans
+CREATE TABLE IF NOT EXISTS plan_analysis (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-  section_name TEXT NOT NULL,
-  section_type TEXT, -- Standardized section type for similar sections across different plans
-  section_content TEXT,
-  section_order INTEGER NOT NULL, -- For maintaining the order of sections
-  parent_section_id UUID REFERENCES plan_sections(id), -- For hierarchical section structure
-  compliance_score INTEGER DEFAULT 0 CHECK (compliance_score >= 0 AND compliance_score <= 100),
-  is_critical BOOLEAN DEFAULT FALSE,
-  ai_suggestions TEXT,
-  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  plan_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE, -- Plan that was analyzed
+  overall_score NUMERIC(5,2) NOT NULL,      -- Overall compliance score (0-100)
+  missing_elements_count INTEGER NOT NULL DEFAULT 0, -- Number of missing elements found
+  analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- When analysis was performed
+  analysis_data JSONB,                      -- Detailed analysis results
+  created_by UUID REFERENCES users(id)      -- User who initiated the analysis
 );
 
--- Create plan_templates table for reusable section templates
-CREATE TABLE IF NOT EXISTS plan_templates (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  template_name TEXT NOT NULL,
-  plan_type TEXT NOT NULL, -- EOP, HMP, COOP, etc.
-  description TEXT,
-  created_by UUID REFERENCES users(id),
-  is_system_template BOOLEAN DEFAULT FALSE, -- Flag for system-provided templates
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create template_sections table for sections within templates
-CREATE TABLE IF NOT EXISTS template_sections (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  template_id UUID NOT NULL REFERENCES plan_templates(id) ON DELETE CASCADE,
-  section_name TEXT NOT NULL,
-  section_type TEXT NOT NULL,
-  section_description TEXT,
-  section_order INTEGER NOT NULL,
-  parent_section_id UUID REFERENCES template_sections(id),
-  is_required BOOLEAN DEFAULT FALSE,
-  is_critical BOOLEAN DEFAULT FALSE,
-  compliance_rules JSONB, -- Rules for compliance checking
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Trigger to update plans.updated_at whenever a record changes
+-- Trigger to update the updated_at timestamp
+-- Automatically updates the updated_at column whenever a row is modified
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
-   NEW.updated_at = NOW();
+   NEW.updated_at = NOW(); -- Set updated_at to current timestamp
    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER update_plans_modtime
-BEFORE UPDATE ON plans
+-- Trigger for the documents table to track last modification time
+CREATE TRIGGER update_documents_modtime
+BEFORE UPDATE ON documents
 FOR EACH ROW
 EXECUTE FUNCTION update_modified_column();
 
-CREATE TRIGGER update_reference_documents_modtime
-BEFORE UPDATE ON reference_documents
-FOR EACH ROW
-EXECUTE FUNCTION update_modified_column();
+-- Create storage bucket policies
+-- These policies control access to files in Supabase Storage buckets
+
+-- For 'plans' bucket (emergency management plans)
+CREATE POLICY "Allow users to upload plan files" ON storage.objects
+FOR INSERT TO authenticated         -- Only authenticated users can upload
+WITH CHECK (bucket_id = 'plans');   -- Only to the plans bucket
+
+CREATE POLICY "Allow users to view plan files" ON storage.objects
+FOR SELECT TO authenticated       -- Only authenticated users can view
+USING (bucket_id = 'plans');      -- Only from the plans bucket
+
+-- For 'reference-documents' bucket (reference standards and guidelines)
+CREATE POLICY "Allow users to view reference documents" ON storage.objects
+FOR SELECT TO authenticated              -- Only authenticated users can view
+USING (bucket_id = 'reference-documents'); -- Only from the reference-documents bucket
+
+CREATE POLICY "Allow users to upload reference documents" ON storage.objects
+FOR INSERT TO authenticated              -- Only authenticated users can upload
+WITH CHECK (bucket_id = 'reference-documents'); -- Only to the reference-documents bucket
+
+-- Enable Row Level Security (RLS) for all tables
+-- RLS ensures that users can only access rows they are authorized to access
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;              -- Protect user accounts
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;          -- Protect documents
+ALTER TABLE vector_embeddings ENABLE ROW LEVEL SECURITY;  -- Protect embeddings
+ALTER TABLE plan_analysis ENABLE ROW LEVEL SECURITY;      -- Protect analysis results
+
+-- Create policies for documents table
+-- These policies control which rows users can access in the documents table
+CREATE POLICY "Users can insert documents" 
+ON documents 
+FOR INSERT                      -- For INSERT operations
+TO authenticated                -- Only authenticated users
+WITH CHECK (user_id = auth.uid()); -- Can only insert documents they own
+
+CREATE POLICY "Users can view documents" 
+ON documents 
+FOR SELECT                      -- For SELECT operations
+TO authenticated                -- Only authenticated users
+USING (true);                   -- Can view all documents
+
+-- Create policies for vector_embeddings table
+-- These policies control which rows users can access in the vector_embeddings table
+CREATE POLICY "Users can insert vector embeddings" 
+ON vector_embeddings 
+FOR INSERT                       -- For INSERT operations
+TO authenticated                 -- Only authenticated users
+WITH CHECK (document_id IN       -- Can only insert embeddings for documents they own
+  (SELECT id FROM documents WHERE user_id = auth.uid())
+);
+
+CREATE POLICY "Users can view vector embeddings" 
+ON vector_embeddings 
+FOR SELECT                       -- For SELECT operations
+TO authenticated                 -- Only authenticated users
+USING (true);                    -- Can view all embeddings
+
+-- Create policies for plan_analysis table
+-- These policies control which rows users can access in the plan_analysis table
+CREATE POLICY "Users can insert plan analysis" 
+ON plan_analysis 
+FOR INSERT                       -- For INSERT operations
+TO authenticated                 -- Only authenticated users
+WITH CHECK (plan_id IN           -- Can only insert analysis for plans they own
+  (SELECT id FROM documents WHERE user_id = auth.uid())
+);
+
+CREATE POLICY "Users can view plan analysis" 
+ON plan_analysis 
+FOR SELECT                       -- For SELECT operations
+TO authenticated                 -- Only authenticated users
+USING (true);                    -- Can view all analysis results
+
+-- Add a sample admin user for testing
+-- This creates an initial administrator account that can be used to set up the system
+INSERT INTO users (name, email, password, role)
+VALUES (
+  'Admin User',                  -- Display name
+  'admin@example.com',           -- Login email
+  -- bcrypt hash for 'admin123'  -- Password (hashed)
+  '$2a$10$yLjK3aat1eMnB1xtLCuHXO9yExkfMDCODhdYO40suQ58mRF4YL4mG',
+  'admin'                        -- Administrator role
+) ON CONFLICT (email) DO NOTHING;  -- Skip if this user already exists
