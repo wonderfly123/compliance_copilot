@@ -1,7 +1,6 @@
 // client/src/App.js
 import React, { useState, useEffect, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Dashboard from './pages/Dashboard';
 import ReferenceDocuments from './pages/ReferenceDocuments';
 import Plans from './pages/Plans';
 import GapAnalysisResults from './pages/GapAnalysisResults';
@@ -55,7 +54,7 @@ const AppContent = () => {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 <Route element={<PrivateRoute />}>
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/" element={<Plans />} />
                   <Route path="/references" element={<ReferenceDocuments />} />
                   <Route path="/plans" element={<Plans />} />
                   <Route path="/gap-analysis-results/:planId" element={<GapAnalysisResults />} />

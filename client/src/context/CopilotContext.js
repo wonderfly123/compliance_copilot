@@ -20,7 +20,7 @@ export const CopilotProvider = ({ children }) => {
   
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [userContext, setUserContext] = useState({
-    currentPage: 'dashboard'
+    currentPage: 'plans'
   });
   const [proactiveMessage, setProactiveMessage] = useState(null);
   
@@ -30,9 +30,9 @@ export const CopilotProvider = ({ children }) => {
   // Update current page when location changes
   useEffect(() => {
     const path = location.pathname;
-    let currentPage = 'dashboard';
+    let currentPage = 'plans';
     
-    if (path.includes('/plans')) {
+    if (path.includes('/plans') || path === '/') {
       currentPage = 'plans';
     } else if (path.includes('/plan/')) {
       currentPage = 'plan-details';
@@ -60,8 +60,6 @@ export const CopilotProvider = ({ children }) => {
         setUserContext(prev => ({ ...prev, planId, currentPage }));
         return;
       }
-    } else if (path === '/') {
-      currentPage = 'dashboard';
     }
     
     setUserContext(prev => ({ ...prev, currentPage }));

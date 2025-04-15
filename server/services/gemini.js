@@ -259,28 +259,47 @@ class CopilotAI {
       return "No specific reference documents available.";
     }
     
-    // Group chunks by source document for better context
+    // Group chunks by source document and type for better context
     const documentGroups = {};
     
     contextChunks.forEach(chunk => {
       const docTitle = chunk.title || 'Unknown Document';
-      if (!documentGroups[docTitle]) {
-        documentGroups[docTitle] = [];
+      const docType = chunk.type || 'Document';
+      
+      // Create a unique key that includes both title and type
+      const groupKey = `${docTitle}__${docType}`;
+      
+      if (!documentGroups[groupKey]) {
+        documentGroups[groupKey] = [];
       }
-      documentGroups[docTitle].push({
+      
+      documentGroups[groupKey].push({
         content: chunk.content,
         section: chunk.section || 'General',
-        type: chunk.type || 'Document'
+        type: docType
       });
     });
     
-    // Format each document group
-    const formattedGroups = Object.entries(documentGroups).map(([title, chunks]) => {
-      const chunksText = chunks.map(chunk => 
-        `Section: ${chunk.section}\nContent: ${chunk.content.trim()}`
-      ).join('\n\n');
+    // Format each document group based on type
+    const formattedGroups = Object.entries(documentGroups).map(([groupKey, chunks]) => {
+      const [title, type] = groupKey.split('__');
       
-      return `DOCUMENT: ${title} (${chunks[0].type})\n${chunksText}`;
+      // Handle different types of content differently
+      if (type === 'Analysis') {
+        // For analysis data, format differently
+        const chunksText = chunks.map(chunk => 
+          `${chunk.section}:\n${chunk.content.trim()}`
+        ).join('\n\n');
+        
+        return `COMPLIANCE ANALYSIS: ${title}\n${chunksText}`;
+      } else {
+        // For regular documents and references
+        const chunksText = chunks.map(chunk => 
+          `Section: ${chunk.section}\nContent: ${chunk.content.trim()}`
+        ).join('\n\n');
+        
+        return `DOCUMENT: ${title} (${type})\n${chunksText}`;
+      }
     });
     
     return formattedGroups.join('\n\n---\n\n');
@@ -323,16 +342,20 @@ class CopilotAI {
           
           ## Guidelines for Response:
           1. Always cite your sources when using information from the references using [Source Name] format.
-          2. If you don't know the answer, admit that you don't know rather than making something up.
-          3. Keep responses concise and directly answer the user's question.
-          4. When referencing plan sections, be specific about which section you're referring to.
-          5. If the user is asking about compliance, reference the specific standard.
-          6. Use formatting (bold, bullet points) to highlight key information.
+          2. If there is compliance analysis information available, prioritize including that in your response.
+          3. If you don't know the answer, admit that you don't know rather than making something up.
+          4. Keep responses concise and directly answer the user's question.
+          5. When referencing plan sections, be specific about which section you're referring to.
+          6. If the user is asking about compliance, reference both the specific standard and the compliance analysis if available.
+          7. Use formatting (bold, bullet points) to highlight key information.
+          8. When discussing compliance scores or critical gaps, always mention the source as [Compliance Analysis].
           
           ## Response Format:
           - Be concise but thorough
           - Start with a direct answer to the question
           - Back up your answer with specific references when possible
+          - If analysis data is available and the question is about plan quality, compliance, or recommendations, 
+            prioritize sharing that information
           `
         }]
       };
@@ -420,8 +443,33 @@ class CopilotAI {
       });
     }
     
+    // Check for compliance analysis mentions
+    if (text.toLowerCase().includes('compliance analysis') || 
+        text.toLowerCase().includes('analysis shows') ||
+        text.toLowerCase().includes('according to the analysis') ||
+        text.toLowerCase().includes('compliance score')) {
+      mentionedSources.add('Compliance Analysis');
+    }
+    
     // Match mentioned sources to context chunks
     mentionedSources.forEach(source => {
+      // Special handling for Compliance Analysis
+      if (source === 'Compliance Analysis') {
+        const analysisChunks = contextChunks.filter(chunk => 
+          chunk.type && chunk.type.toLowerCase() === 'analysis'
+        );
+        
+        if (analysisChunks.length > 0) {
+          // Add unique analysis references
+          references.push({
+            title: 'Compliance Analysis',
+            section: 'Gap Analysis Results',
+            type: 'Analysis'
+          });
+        }
+        return;
+      }
+      
       const matchingChunks = contextChunks.filter(chunk => {
         // Check if source name appears in chunk title or type
         return (chunk.title && chunk.title.toLowerCase().includes(source.toLowerCase())) ||

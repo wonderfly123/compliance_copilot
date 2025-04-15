@@ -531,7 +531,10 @@ exports.answerQuestion = async (req, res) => {
     
     // If a specific plan was mentioned, also search that plan's content
     let planChunks = [];
+    let analysisChunks = [];
+    
     if (planId) {
+      // Get plan content
       const { data: planResults, error: planError } = await supabase
         .from('vector_embeddings')
         .select('content, metadata')
@@ -547,9 +550,63 @@ exports.answerQuestion = async (req, res) => {
           type: 'Plan'
         }));
       }
+      
+      // Get the latest Gap Analysis results for this plan
+      const { data: analysisData, error: analysisError } = await supabase
+        .from('plan_analysis')
+        .select('*')
+        .eq('plan_id', planId)
+        .order('analyzed_at', { ascending: false })
+        .limit(1)
+        .single();
+        
+      if (!analysisError && analysisData && analysisData.analysis_data) {
+        // Create chunks from analysis data
+        const analysis = analysisData.analysis_data;
+        
+        // Add overall score information
+        analysisChunks.push({
+          content: `This plan has an overall compliance score of ${analysis.overallScore}%. This score was calculated on ${new Date(analysisData.analyzed_at).toLocaleDateString()}.`,
+          title: 'Compliance Analysis',
+          section: 'Overall Score',
+          type: 'Analysis'
+        });
+        
+        // Add critical gaps information if available
+        if (analysis.missingElementsList && analysis.missingElementsList.length > 0) {
+          const criticalGaps = analysis.missingElementsList
+            .filter(item => item.isCritical)
+            .map(item => `- ${item.element || item.description}: ${item.description || ''} (Source: ${item.referenceSource || 'Reference Standards'})`)
+            .join('\n');
+            
+          if (criticalGaps) {
+            analysisChunks.push({
+              content: `Critical gaps identified in the plan:\n${criticalGaps}`,
+              title: 'Compliance Analysis',
+              section: 'Critical Gaps',
+              type: 'Analysis'
+            });
+          }
+        }
+        
+        // Add recommendations information if available
+        if (analysis.improvementRecommendations && analysis.improvementRecommendations.length > 0) {
+          const recommendations = analysis.improvementRecommendations
+            .slice(0, 5) // Limit to top 5 recommendations
+            .map(rec => `- ${rec.text || rec.recommendedChange}: ${rec.section ? `[${rec.section}] ` : ''}(Importance: ${rec.importance || 'medium'})`)
+            .join('\n');
+            
+          analysisChunks.push({
+            content: `Top recommendations for improving the plan:\n${recommendations}`,
+            title: 'Compliance Analysis',
+            section: 'Recommendations',
+            type: 'Analysis'
+          });
+        }
+      }
     }
     
-    // Combine reference and plan chunks for context
+    // Combine reference, plan and analysis chunks for context
     const contextChunks = [
       ...referenceResults.map(result => ({
         content: result.content,
@@ -557,15 +614,22 @@ exports.answerQuestion = async (req, res) => {
         section: result.metadata?.section_title || '',
         type: 'Reference'
       })),
-      ...planChunks
+      ...planChunks,
+      ...analysisChunks
     ];
+    
+    // Prepare user context with plan information
+    const userContext = {
+      planId,
+      hasGapAnalysis: analysisChunks.length > 0
+    };
     
     // Get response from Copilot AI
     const answer = await copilotAI.answerQuestion(
       question, 
       contextChunks, 
       conversationHistory,
-      {}  // Empty context object
+      userContext
     );
     
     return res.status(200).json({
