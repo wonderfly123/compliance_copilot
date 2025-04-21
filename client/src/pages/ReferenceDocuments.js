@@ -10,6 +10,12 @@ const ReferenceDocuments = () => {
   const [referenceType, setReferenceType] = useState('All Types');
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [currentDocument, setCurrentDocument] = useState(null);
   const [referenceForm, setReferenceForm] = useState({
     title: '',
     description: '',
@@ -139,6 +145,57 @@ const ReferenceDocuments = () => {
     }
   };
 
+  // Handle viewing a reference document
+  const handleViewReference = async (id) => {
+    try {
+      setViewLoading(true);
+      
+      // Fetch the document from the API
+      const response = await axios.get(`/api/references/${id}`);
+      
+      if (response.data.success) {
+        setCurrentDocument(response.data.data);
+        setViewModalOpen(true);
+      } else {
+        setError('Failed to retrieve reference document');
+      }
+    } catch (error) {
+      console.error('Error fetching reference document:', error);
+      setError(error.response?.data?.message || 'Failed to retrieve reference document');
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  // Handle deleting a reference document
+  const handleDeleteReference = (id) => {
+    setDeleteId(id);
+    setDeleteModalOpen(true);
+  };
+
+  // Confirm and execute deletion
+  const confirmDelete = async () => {
+    try {
+      setDeleteLoading(true);
+      
+      // Call the API to delete the reference document
+      const response = await axios.delete(`/api/references/${deleteId}`);
+      
+      if (response.data.success) {
+        // Remove the document from the state
+        setReferenceDocuments(referenceDocuments.filter(doc => doc.id !== deleteId));
+        setDeleteModalOpen(false);
+      } else {
+        setError('Failed to delete reference document');
+      }
+    } catch (error) {
+      console.error('Error deleting reference document:', error);
+      setError(error.response?.data?.message || 'Failed to delete reference document');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   // Filter reference documents based on search term and type
   const filteredReferenceDocuments = referenceDocuments.filter(doc => {
     const matchesSearchTerm = 
@@ -235,9 +292,16 @@ const ReferenceDocuments = () => {
                       </span>
                     </td>
                     <td>
-                      <button className="text-blue-600 hover:text-blue-900 mr-2">View</button>
-                      <button className="text-blue-600 hover:text-blue-900 mr-2">Edit</button>
-                      <button className="text-blue-600 hover:text-blue-900">Search</button>
+                      <button 
+                        className="text-blue-600 hover:text-blue-900 mr-2"
+                        onClick={() => handleViewReference(doc.id)}
+                      >View</button>
+                      <button 
+                        className="text-red-600 hover:text-red-900"
+                        onClick={() => handleDeleteReference(doc.id)}
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -266,6 +330,140 @@ const ReferenceDocuments = () => {
         </div>
       </div>
       
+      {/* View Document Modal */}
+      {viewModalOpen && currentDocument && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button 
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+              onClick={() => setViewModalOpen(false)}
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <h2 className="text-xl font-semibold mb-4">{currentDocument.title}</h2>
+            
+            <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <span className="text-gray-600 font-medium">Type:</span> {currentDocument.doc_subtype || currentDocument.type}
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Source:</span> {currentDocument.source_org || 'N/A'}
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Uploaded:</span> {currentDocument.created_at ? new Date(currentDocument.created_at).toLocaleDateString() : 'N/A'}
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Authority level:</span> {currentDocument.authority_level || 'N/A'}
+              </div>
+            </div>
+            
+            {currentDocument.description && (
+              <div className="mb-4">
+                <h3 className="text-md font-medium mb-2">Description:</h3>
+                <p className="text-gray-700">{currentDocument.description}</p>
+              </div>
+            )}
+            
+            <div className="border-t pt-4 mt-4">
+              <h3 className="text-md font-medium mb-2">Document Content:</h3>
+              <div className="bg-gray-50 p-4 rounded-md max-h-96 overflow-y-auto">
+                {currentDocument.content ? (
+                  <pre className="whitespace-pre-wrap">{currentDocument.content}</pre>
+                ) : (
+                  <div className="text-gray-500 italic">No content available for preview. Please download the document to view contents.</div>
+                )}
+              </div>
+            </div>
+            
+            {currentDocument.file_url && (
+              <div className="mt-4 flex justify-end">
+                <button 
+                  onClick={async () => {
+                    try {
+                      if (currentDocument.file_url) {
+                        // Direct download from Supabase with file path
+                        const supabaseUrl = 'https://ehazvybmhkfrmoyukiqy.supabase.co';
+                        const downloadUrl = `${supabaseUrl}/storage/v1/object/public/reference-documents/${currentDocument.file_url}`;
+                        console.log('Direct Supabase URL:', downloadUrl);
+                        
+                        // Create a temporary link to download the file
+                        const link = document.createElement('a');
+                        link.href = downloadUrl;
+                        const filename = currentDocument.original_filename || `${currentDocument.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                        link.setAttribute('download', filename);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      } else {
+                        setError('No file available for download');
+                      }
+                    } catch (error) {
+                      console.error('Error downloading document:', error);
+                      setError('Failed to download document');
+                    }
+                  }}
+                  className="btn bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Download Document
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <button 
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+              onClick={() => setDeleteModalOpen(false)}
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <h2 className="text-xl font-semibold mb-4">Delete Reference Document</h2>
+            
+            <p className="mb-6 text-gray-700">
+              Are you sure you want to delete this reference document? This action cannot be undone.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button 
+                type="button"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                onClick={confirmDelete}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </>
+                ) : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Copilot component */}
       <Copilot />
       

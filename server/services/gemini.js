@@ -314,6 +314,11 @@ class CopilotAI {
    * @returns {Promise<Object>} - The assistant's response with references and suggested actions
    */
   async answerQuestion(question, contextChunks = [], conversationHistory = [], userContext = {}) {
+    const startTime = Date.now();
+    console.log(`[COPILOT] Processing question: "${question.substring(0, 100)}${question.length > 100 ? '...' : ''}"`);
+    console.log(`[COPILOT] Context chunks: ${contextChunks.length} chunks provided`);
+    console.log(`[COPILOT] Conversation history: ${conversationHistory.length} previous messages`);
+    
     try {
       // Format the conversation history - limit to last 10 messages for context window management
       const recentHistory = conversationHistory.slice(-10);
@@ -322,8 +327,21 @@ class CopilotAI {
         parts: [{ text: msg.text }]
       }));
       
+      console.log(`[COPILOT] Formatted ${recentHistory.length} recent conversation messages`);
+      
       // Format the context chunks with enhanced metadata
       const contextText = this.formatContextChunks(contextChunks);
+      console.log(`[COPILOT] Formatted context text (${contextText.length} characters)`);
+      
+      if (contextChunks.length > 0) {
+        // Log the titles of the reference chunks being used
+        const contextSources = contextChunks.map(chunk => 
+          `${chunk.type || 'Unknown'}: ${chunk.title || 'Untitled'}${chunk.section ? ` - ${chunk.section}` : ''}`
+        );
+        console.log(`[COPILOT] Using the following sources:\n- ${contextSources.join('\n- ')}`);
+      } else {
+        console.log(`[COPILOT] No specific context chunks available for this question`);
+      }
       
       // Create the system prompt with enhanced instructions
       const systemPrompt = {
@@ -369,24 +387,67 @@ class CopilotAI {
         parts: [{ text: question }]
       });
       
-      // Generate the response
-      const response = await getGeminiResponse(chatHistory, {
-        temperature: 0.4, // Lower temperature for more factual responses
-        maxTokens: 2048,
-      });
+      console.log(`[COPILOT] Sending request to Gemini API with ${chatHistory.length} messages`);
+      console.log(`[COPILOT] Question tokens (approximate): ${question.length / 4} tokens`);
+      console.log(`[COPILOT] Context tokens (approximate): ${contextText.length / 4} tokens`);
       
-      const responseText = response.text();
-      
-      // Extract references from the response
-      const references = this.extractReferences(responseText, contextChunks);
-      
-      return {
-        text: responseText,
-        references
-      };
+      try {
+        // Generate the response
+        const response = await getGeminiResponse(chatHistory, {
+          temperature: 0.4, // Lower temperature for more factual responses
+          maxTokens: 2048,
+        });
+        
+        const responseText = response.text();
+        console.log(`[COPILOT] Response received from Gemini API (${responseText.length} characters)`);
+        console.log(`[COPILOT] Response text sample: "${responseText.substring(0, 100)}${responseText.length > 100 ? '...' : ''}"`);
+        
+        // Extract references from the response
+        const references = this.extractReferences(responseText, contextChunks);
+        console.log(`[COPILOT] Extracted ${references.length} references from response`);
+        
+        const elapsedTime = Date.now() - startTime;
+        console.log(`[COPILOT] Total processing time: ${elapsedTime}ms`);
+        
+        return {
+          text: responseText,
+          references,
+          processingTimeMs: elapsedTime
+        };
+      } catch (geminiError) {
+        console.error(`[COPILOT] Gemini API Error: ${geminiError.message}`, geminiError);
+        
+        if (geminiError.message.includes('quota')) {
+          console.error('[COPILOT] API quota exceeded');
+          throw new Error('AI service quota exceeded. Please try again later.');
+        }
+        
+        if (geminiError.message.includes('content filtered') || geminiError.message.includes('blocked')) {
+          console.error('[COPILOT] Content filtering triggered');
+          throw new Error('Your question was flagged by our content filter. Please rephrase and try again.');
+        }
+        
+        throw geminiError;
+      }
     } catch (error) {
-      console.error('Error in Copilot AI:', error);
-      throw new Error('Failed to generate response from Copilot AI');
+      const elapsedTime = Date.now() - startTime;
+      console.error(`[COPILOT] Error after ${elapsedTime}ms:`, error);
+      console.error(`[COPILOT] Error stack:`, error.stack);
+      
+      // Create a more informative error message based on the error type
+      let errorMessage = 'Failed to generate response from Copilot AI';
+      
+      if (error.message.includes('network') || error.message.includes('connection')) {
+        errorMessage = 'Network error connecting to AI service. Please check your connection and try again.';
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'AI service request timed out. Please try a simpler question or try again later.';
+      } else if (error.message.includes('quota')) {
+        errorMessage = 'AI service quota exceeded. Please try again later.';
+      } else if (error.message.includes('content filtered') || error.message.includes('blocked')) {
+        errorMessage = 'Your question was flagged by our content filter. Please rephrase and try again.';
+      }
+      
+      throw new Error(errorMessage);
     }
   }
   

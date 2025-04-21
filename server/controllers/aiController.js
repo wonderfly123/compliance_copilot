@@ -505,16 +505,37 @@ exports.getAnalysisThinkingProcess = async (req, res) => {
  */
 exports.answerQuestion = async (req, res) => {
   try {
+    console.log('[AI Controller] Processing question request');
+    const startTime = Date.now();
+
     const { question, conversationHistory, planId } = req.body;
     
     if (!question) {
       return res.status(400).json({ success: false, message: 'Question is required' });
     }
     
+    console.log(`[AI Controller] Received question: "${question.substring(0, 100)}${question.length > 100 ? '...' : ''}"`);
+    console.log(`[AI Controller] Plan ID: ${planId || 'None'}`);
+    console.log(`[AI Controller] Conversation history: ${conversationHistory ? conversationHistory.length : 0} messages`);
+    
     // Get relevant context from vector database based on the question
-    const queryEmbedding = await createEmbedding(question);
+    console.log(`[AI Controller] Generating embedding for query`);
+    let queryEmbedding;
+    try {
+      queryEmbedding = await createEmbedding(question);
+      console.log(`[AI Controller] Embedding generated successfully`);
+    } catch (embeddingError) {
+      console.error('[AI Controller] Error generating embedding:', embeddingError);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Error processing your question. Please try again later.',
+        error: 'Embedding generation failed',
+        details: embeddingError.message
+      });
+    }
     
     // Search for relevant reference documents
+    console.log(`[AI Controller] Searching for relevant reference documents`);
     const { data: referenceResults, error: refError } = await supabase.rpc('match_references', {
       query_embedding: queryEmbedding,
       match_threshold: 0.7,
@@ -522,12 +543,16 @@ exports.answerQuestion = async (req, res) => {
     });
     
     if (refError) {
-      console.error('Error searching reference documents:', refError);
+      console.error('[AI Controller] Error searching reference documents:', refError);
       return res.status(500).json({ 
         success: false, 
-        message: 'Error searching knowledge base' 
+        message: 'Error searching knowledge base',
+        error: refError.message
       });
     }
+    
+    console.log(`[AI Controller] Found ${referenceResults ? referenceResults.length : 0} relevant reference chunks`);
+    
     
     // If a specific plan was mentioned, also search that plan's content
     let planChunks = [];
@@ -625,23 +650,93 @@ exports.answerQuestion = async (req, res) => {
     };
     
     // Get response from Copilot AI
-    const answer = await copilotAI.answerQuestion(
-      question, 
-      contextChunks, 
-      conversationHistory,
-      userContext
-    );
-    
-    return res.status(200).json({
-      success: true,
-      data: answer
-    });
+    console.log(`[AI Controller] Sending question to Copilot AI with ${contextChunks.length} context chunks`);
+    try {
+      const answer = await copilotAI.answerQuestion(
+        question, 
+        contextChunks, 
+        conversationHistory,
+        userContext
+      );
+      
+      const endTime = Date.now();
+      const totalTime = endTime - startTime;
+      console.log(`[AI Controller] Total request processing time: ${totalTime}ms`);
+      
+      return res.status(200).json({
+        success: true,
+        data: answer,
+        timing: {
+          totalProcessingTime: totalTime,
+          aiProcessingTime: answer.processingTimeMs
+        }
+      });
+    } catch (aiError) {
+      console.error('[AI Controller] Copilot AI error:', aiError);
+      
+      // Map specific error types to appropriate responses
+      if (aiError.message.includes('quota')) {
+        return res.status(429).json({
+          success: false,
+          message: 'AI service quota exceeded. Please try again later.',
+          error: 'QUOTA_EXCEEDED'
+        });
+      }
+      
+      if (aiError.message.includes('content filtered')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Your question was flagged by our content filter. Please rephrase and try again.',
+          error: 'CONTENT_FILTERED'
+        });
+      }
+      
+      if (aiError.message.includes('timeout')) {
+        return res.status(408).json({
+          success: false,
+          message: 'Request to AI service timed out. Please try a simpler question or try again later.',
+          error: 'TIMEOUT'
+        });
+      }
+      
+      // Generic error response for other cases
+      return res.status(500).json({
+        success: false,
+        message: 'An error occurred while processing your question',
+        error: aiError.message
+      });
+    }
   } catch (error) {
-    console.error('Error in Copilot AI controller:', error);
-    return res.status(500).json({
+    const errorTime = Date.now() - startTime;
+    console.error(`[AI Controller] Error after ${errorTime}ms in answering question:`, error);
+    console.error('[AI Controller] Error stack:', error.stack);
+    
+    // Categorize error types for better client feedback
+    let errorMessage = 'An error occurred while processing your question';
+    let statusCode = 500;
+    let errorType = 'INTERNAL_ERROR';
+    
+    if (error.message.includes('database') || error.message.includes('supabase')) {
+      errorMessage = 'Error accessing knowledge base. Please try again later.';
+      errorType = 'DATABASE_ERROR';
+    } else if (error.message.includes('embedding') || error.message.includes('vector')) {
+      errorMessage = 'Error processing your question. Please try again later.';
+      errorType = 'EMBEDDING_ERROR';
+    } else if (error.message.includes('timeout')) {
+      errorMessage = 'Request timed out. Please try again later.';
+      statusCode = 408;
+      errorType = 'TIMEOUT';
+    } else if (error.message.includes('memory') || error.message.includes('resources')) {
+      errorMessage = 'Server resource limit reached. Please try a simpler question.';
+      statusCode = 503;
+      errorType = 'RESOURCE_LIMIT';
+    }
+    
+    return res.status(statusCode).json({
       success: false,
-      message: 'An error occurred while processing your question',
-      error: error.message
+      message: errorMessage,
+      error: errorType,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

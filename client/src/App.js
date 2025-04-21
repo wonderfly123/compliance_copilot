@@ -45,11 +45,11 @@ const AppContent = () => {
               toggleSidebar={() => setSidebarExpanded(!sidebarExpanded)} 
             />
           )}
-          <div className={`flex flex-col ${!isAuthenticated || loading ? 'w-full' : ''}`}>
+          <div className="flex flex-col w-full flex-grow">
             {isAuthenticated && !loading && (
               <Header />
             )}
-            <main className="main-content bg-gray-100 min-h-screen p-4">
+            <main className="main-content bg-gray-100 min-h-screen p-4 flex-grow">
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />

@@ -12,9 +12,10 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  * Create a Supabase client that uses Row Level Security bypass
  * This approach doesn't depend on JWT format and will work in any environment
  * @param {string} userId - The user's ID to use for RLS policies
+ * @param {Object} options - Additional options for the Supabase client
  * @returns {Object} - Supabase client with headers set for RLS
  */
-const getClientWithUserId = (userId) => {
+const getClientWithUserId = (userId, customOptions = {}) => {
   if (!userId) {
     console.warn('No user ID provided for Supabase client');
     return supabase;
@@ -22,14 +23,30 @@ const getClientWithUserId = (userId) => {
   
   console.log('Creating Supabase client with explicit user ID:', userId);
   
-  // Create client with user ID header for RLS policies
-  return createClient(supabaseUrl, supabaseKey, {
+  // Merge custom options with default options
+  const options = {
     global: {
       headers: {
         'X-User-ID': userId // Custom header that RLS policies can check
       }
     }
-  });
+  };
+  
+  // Deep merge custom options
+  if (customOptions.global) {
+    options.global = { ...options.global, ...customOptions.global };
+    
+    // If custom headers are provided, merge them
+    if (customOptions.global.headers) {
+      options.global.headers = {
+        ...options.global.headers,
+        ...customOptions.global.headers
+      };
+    }
+  }
+  
+  // Create client with merged options
+  return createClient(supabaseUrl, supabaseKey, options);
 };
 
 module.exports = {

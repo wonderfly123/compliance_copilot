@@ -64,17 +64,59 @@ const processDocument = async (fileInfo, metadata) => {
     const fileBuffer = await readFile(fileInfo.path);
     
     console.log(`Uploading to storage bucket: ${bucketName}/${fileName}`);
-    const { data: uploadData, error: uploadError } = await client
-      .storage
-      .from(bucketName)
-      .upload(fileName, fileBuffer, {
-        contentType: fileInfo.mimetype,
-        upsert: false
-      });
     
-    if (uploadError) {
-      console.error('Error uploading file to storage:', uploadError);
-      throw uploadError;
+    // Function to attempt upload with retries
+    const attemptUpload = async (retries = 3, timeout = 30000) => {
+      try {
+        // Create a custom client with longer timeout for this specific upload
+        const customClient = getClientWithUserId(metadata.userId, { 
+          global: { 
+            fetch: (url, init) => {
+              // Set a longer timeout for fetch operations
+              // Create abort controller with timeout
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), timeout);
+              
+              return fetch(url, { 
+                ...init, 
+                signal: controller.signal
+              }).finally(() => clearTimeout(timeoutId));
+            }
+          }
+        });
+        
+        console.log(`Attempting upload with ${timeout}ms timeout...`);
+        const { data: uploadData, error: uploadError } = await customClient
+          .storage
+          .from(bucketName)
+          .upload(fileName, fileBuffer, {
+            contentType: fileInfo.mimetype,
+            upsert: false
+          });
+          
+        if (uploadError) throw uploadError;
+        return uploadData;
+      } catch (error) {
+        console.error(`Upload attempt failed (${retries} retries left):`, error.message);
+        if (retries <= 0) throw error;
+        
+        // Exponential backoff with jitter
+        const delay = Math.floor(Math.random() * 1000) + (4 - retries) * 2000;
+        console.log(`Retrying upload in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Increase timeout for next attempt
+        return attemptUpload(retries - 1, timeout + 30000);
+      }
+    };
+    
+    // Try upload with retries
+    try {
+      const uploadData = await attemptUpload();
+      console.log('File uploaded successfully');
+    } catch (uploadError) {
+      console.error('Error uploading file to storage after retries:', uploadError);
+      throw new Error(`File upload failed: ${uploadError.message}`);
     }
     
     // 5. Create document record in database

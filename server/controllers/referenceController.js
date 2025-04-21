@@ -394,6 +394,70 @@ exports.deleteReference = async (req, res) => {
 };
 
 /**
+ * Download a reference document
+ * @route GET /api/references/:id/download
+ */
+exports.downloadReference = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get the reference document from the database
+    const { data, error } = await supabase
+      .from('documents')
+      .select('file_url, title, original_filename')
+      .eq('id', id)
+      .eq('document_type', 'reference')
+      .single();
+    
+    if (error || !data) {
+      return res.status(404).json({
+        success: false,
+        message: 'Reference document not found'
+      });
+    }
+    
+    if (!data.file_url) {
+      return res.status(404).json({
+        success: false,
+        message: 'No file associated with this reference document'
+      });
+    }
+    
+    console.log('File URL from database:', data.file_url);
+    
+    // Get the public URL for the file
+    const { data: publicUrl } = supabase
+      .storage
+      .from('reference-documents')
+      .getPublicUrl(data.file_url);
+      
+    console.log('Generated public URL:', publicUrl);
+    
+    if (!publicUrl) {
+      return res.status(404).json({
+        success: false,
+        message: 'Could not generate download URL'
+      });
+    }
+    
+    // Return the public URL to the client
+    return res.status(200).json({
+      success: true,
+      url: publicUrl.publicUrl,
+      filename: data.original_filename || `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+    });
+    
+  } catch (error) {
+    console.error('Error downloading reference document:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to download reference document',
+      error: error.message
+    });
+  }
+};
+
+/**
  * Search reference documents by content
  * @route POST /api/references/search
  */

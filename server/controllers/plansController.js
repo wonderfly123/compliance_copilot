@@ -459,6 +459,70 @@ exports.getPlanSuggestions = async (req, res) => {
 };
 
 /**
+ * Download a plan document
+ * @route GET /api/plans/:id/download
+ */
+exports.downloadPlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get the plan from the database
+    const { data, error } = await supabase
+      .from('documents')
+      .select('file_url, title, original_filename')
+      .eq('id', id)
+      .eq('document_type', 'plan')
+      .single();
+    
+    if (error || !data) {
+      return res.status(404).json({
+        success: false,
+        message: 'Plan not found'
+      });
+    }
+    
+    if (!data.file_url) {
+      return res.status(404).json({
+        success: false,
+        message: 'No file associated with this plan'
+      });
+    }
+    
+    console.log('File URL from database:', data.file_url);
+    
+    // Get the public URL for the file
+    const { data: publicUrl } = supabase
+      .storage
+      .from('plans')
+      .getPublicUrl(data.file_url);
+      
+    console.log('Generated public URL:', publicUrl);
+    
+    if (!publicUrl) {
+      return res.status(404).json({
+        success: false,
+        message: 'Could not generate download URL'
+      });
+    }
+    
+    // Return the public URL to the client
+    return res.status(200).json({
+      success: true,
+      url: publicUrl.publicUrl,
+      filename: data.original_filename || `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+    });
+    
+  } catch (error) {
+    console.error('Error downloading plan:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to download plan',
+      error: error.message
+    });
+  }
+};
+
+/**
  * Get metrics
  * @route GET /api/plans/metrics
  */

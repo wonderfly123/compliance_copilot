@@ -24,5 +24,6 @@ router.route('/:id')
 router.post('/upload', plansController.uploadPlan);
 router.get('/:planId/analysis', plansController.getPlanAnalysis);
 router.get('/:planId/suggestions', plansController.getPlanSuggestions);
+router.get('/:id/download', plansController.downloadPlan);
 
 module.exports = router;

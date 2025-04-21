@@ -13,6 +13,13 @@ const Plans = () => {
   const [statusFilter, setStatusFilter] = useState('All Statuses');
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+  const [deletingPlanTitle, setDeletingPlanTitle] = useState('');
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState(null);
   const [planForm, setPlanForm] = useState({
     title: '',
     description: '',
@@ -202,6 +209,58 @@ const Plans = () => {
     return matchesSearchTerm && matchesPlanType && matchesStatus;
   });
   
+  // Handle viewing a plan
+  const handleViewPlan = async (planId) => {
+    try {
+      setViewLoading(true);
+      
+      // Fetch the plan from the API
+      const response = await axios.get(`/api/plans/${planId}`);
+      
+      if (response.data.success) {
+        setCurrentPlan(response.data.data);
+        setViewModalOpen(true);
+      } else {
+        setError('Failed to retrieve plan');
+      }
+    } catch (error) {
+      console.error('Error fetching plan:', error);
+      setError(error.response?.data?.message || 'Failed to retrieve plan');
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  // Handle plan deletion request
+  const handleDeletePlan = (planId, planTitle) => {
+    setDeleteId(planId);
+    setDeletingPlanTitle(planTitle);
+    setDeleteModalOpen(true);
+  };
+
+  // Confirm and execute plan deletion
+  const confirmDelete = async () => {
+    try {
+      setDeleteLoading(true);
+      
+      // Call the API to delete the plan
+      const response = await axios.delete(`/api/plans/${deleteId}`);
+      
+      if (response.data.success) {
+        // Remove the plan from the state
+        setPlans(plans.filter(plan => plan.id !== deleteId));
+        setDeleteModalOpen(false);
+      } else {
+        setError('Failed to delete plan');
+      }
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+      setError(error.response?.data?.message || 'Failed to delete plan');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   // Handle plan analysis request
   const handleAnalyzePlan = async (planId) => {
     try {
@@ -261,7 +320,7 @@ const Plans = () => {
         </button>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Compliance Summary Card */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold mb-3">Compliance Summary</h3>
@@ -284,18 +343,18 @@ const Plans = () => {
             <div className="bg-red-50 rounded-md p-3">
               <div className="text-sm text-gray-600">Plans Needing Review</div>
               <div className="text-xl font-semibold">
-                {plans.filter(plan => plan.compliance_score < 60).length}
+                {plans.filter(plan => plan.compliance_score < 70).length}
               </div>
             </div>
             <div className="bg-yellow-50 rounded-md p-3">
-              <div className="text-sm text-gray-600">Plans Expiring Soon</div>
+              <div className="text-sm text-gray-600">Plans Expiring in 30 Days or Less</div>
               <div className="text-xl font-semibold">
                 {plans.filter(plan => {
                   const expDate = new Date(plan.expiration_date);
                   const now = new Date();
-                  const threeMonthsFromNow = new Date();
-                  threeMonthsFromNow.setMonth(now.getMonth() + 3);
-                  return expDate <= threeMonthsFromNow;
+                  const oneMonthFromNow = new Date();
+                  oneMonthFromNow.setMonth(now.getMonth() + 1);
+                  return expDate <= oneMonthFromNow;
                 }).length}
               </div>
             </div>
@@ -325,36 +384,6 @@ const Plans = () => {
                 </div>
               );
             })}
-          </div>
-          <div className="mt-4 pt-3 border-t">
-            <button className="text-blue-600 text-sm hover:underline">
-              View All Plan Types
-            </button>
-          </div>
-        </div>
-        
-        {/* Recent Activity Card */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-3">Recent Activity</h3>
-          <div className="space-y-3">
-            {[
-              { text: "Wildfire Hazard Mitigation Plan analyzed", time: "2 days ago" },
-              { text: "San Mateo Evacuation Plan updated", time: "1 week ago" },
-              { text: "Health Department COOP created", time: "2 weeks ago" }
-            ].map((activity, index) => (
-              <div key={index} className="flex items-start">
-                <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 mr-2"></div>
-                <div>
-                  <div className="text-sm">{activity.text}</div>
-                  <div className="text-xs text-gray-500">{activity.time}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 pt-3 border-t">
-            <button className="text-blue-600 text-sm hover:underline">
-              View All Activity
-            </button>
           </div>
         </div>
       </div>
@@ -491,11 +520,17 @@ const Plans = () => {
                             Analyze
                           </button>
                         )}
-                        <Link to={`/plans/${plan.id}`} className="text-blue-600 hover:text-blue-900">
+                        <button 
+                          className="text-blue-600 hover:text-blue-900"
+                          onClick={() => handleViewPlan(plan.id)}
+                        >
                           View
-                        </Link>
-                        <button className="text-blue-600 hover:text-blue-900">
-                          Edit
+                        </button>
+                        <button 
+                          className="text-red-600 hover:text-red-900"
+                          onClick={() => handleDeletePlan(plan.id, plan.title)}
+                        >
+                          Delete
                         </button>
                       </div>
                     </td>
@@ -526,6 +561,166 @@ const Plans = () => {
         </div>
       </div>
       
+      {/* View Plan Modal */}
+      {viewModalOpen && currentPlan && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button 
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+              onClick={() => setViewModalOpen(false)}
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <h2 className="text-xl font-semibold mb-4">{currentPlan.title}</h2>
+            
+            <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <span className="text-gray-600 font-medium">Type:</span> {currentPlan.doc_subtype || currentPlan.type}
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Status:</span> 
+                <span className={`status-badge ${currentPlan.status === 'Final' ? 'status-final' : currentPlan.status === 'Draft' ? 'status-draft' : 'status-review'}`}>
+                  {currentPlan.status}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Compliance Score:</span> 
+                <span className={`text-sm font-medium px-2 py-0.5 rounded-md ${getScoreColorClass(currentPlan.compliance_score || 0)}`}>
+                  {currentPlan.compliance_score || 0}%
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Location:</span> {currentPlan.location || currentPlan.metadata?.location || 'N/A'}
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Department:</span> {currentPlan.department || 'N/A'}
+              </div>
+              <div>
+                <span className="text-gray-600 font-medium">Created:</span> {currentPlan.created_at ? new Date(currentPlan.created_at).toLocaleDateString() : 'N/A'}
+              </div>
+            </div>
+            
+            {currentPlan.description && (
+              <div className="mb-4">
+                <h3 className="text-md font-medium mb-2">Description:</h3>
+                <p className="text-gray-700">{currentPlan.description}</p>
+              </div>
+            )}
+            
+            <div className="border-t pt-4 mt-4">
+              <h3 className="text-md font-medium mb-2">Plan Content:</h3>
+              <div className="bg-gray-50 p-4 rounded-md max-h-96 overflow-y-auto">
+                {currentPlan.content ? (
+                  <pre className="whitespace-pre-wrap">{currentPlan.content}</pre>
+                ) : (
+                  <div className="text-gray-500 italic">No content available for preview. Please download the document to view contents.</div>
+                )}
+              </div>
+            </div>
+            
+            <div className="mt-6 flex justify-between items-center">
+              <div>
+                {currentPlan.compliance_score > 0 && (
+                  <button 
+                    className="btn bg-green-600 hover:bg-green-700 text-white mr-2"
+                    onClick={() => {
+                      setViewModalOpen(false);
+                      navigate(`/gap-analysis-results/${currentPlan.id}`);
+                    }}
+                  >
+                    View Compliance Analysis
+                  </button>
+                )}
+              </div>
+              
+              {currentPlan.file_url && (
+                <button 
+                  onClick={async () => {
+                    try {
+                      if (currentPlan.file_url) {
+                        // Direct download from Supabase with file path
+                        const supabaseUrl = 'https://ehazvybmhkfrmoyukiqy.supabase.co';
+                        const downloadUrl = `${supabaseUrl}/storage/v1/object/public/plans/${currentPlan.file_url}`;
+                        console.log('Direct Supabase URL:', downloadUrl);
+                        
+                        // Create a temporary link to download the file
+                        const link = document.createElement('a');
+                        link.href = downloadUrl;
+                        const filename = currentPlan.original_filename || `${currentPlan.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                        link.setAttribute('download', filename);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      } else {
+                        setError('No file available for download');
+                      }
+                    } catch (error) {
+                      console.error('Error downloading plan:', error);
+                      setError('Failed to download plan');
+                    }
+                  }}
+                  className="btn bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Download Plan
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <button 
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+              onClick={() => setDeleteModalOpen(false)}
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <h2 className="text-xl font-semibold mb-4">Delete Plan</h2>
+            
+            <p className="mb-6 text-gray-700">
+              Are you sure you want to delete the plan <span className="font-medium">"{deletingPlanTitle}"</span>? This action cannot be undone and will remove all associated analysis data.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button 
+                type="button"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                onClick={confirmDelete}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </>
+                ) : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Copilot component */}
       <Copilot />
       

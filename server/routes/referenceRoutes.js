@@ -23,4 +23,7 @@ router.route('/:id')
 // New route for file upload
 router.post('/upload', authorize('admin'), referenceController.uploadReference);
 
+// Download route
+router.get('/:id/download', referenceController.downloadReference);
+
 module.exports = router;
