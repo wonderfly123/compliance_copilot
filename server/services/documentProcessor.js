@@ -8,6 +8,7 @@ const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 const readFile = promisify(fs.readFile);
 const { supabase, getClientWithUserId } = require('../utils/supabaseAuth');
+const GapAnalysisOrchestrator = require('./gapAnalysisOrchestrator');
 
 /**
  * Process an uploaded document: extract text, chunk it, and create embeddings
@@ -175,7 +176,48 @@ const processDocument = async (fileInfo, metadata) => {
       }
     }
     
-    // 7. Clean up temporary file
+    // 7. For reference documents, process and extract requirements
+    if (metadata.documentType === 'reference') {
+      try {
+        console.log('Extracting requirements from reference document...');
+        const orchestrator = new GapAnalysisOrchestrator();
+        
+        // Process requirements
+        const requirementsResult = await orchestrator.orchestrateAnalysis(
+          'process_reference', 
+          { document_id: documentId }
+        );
+        
+        if (requirementsResult.success) {
+          console.log(`Successfully extracted ${requirementsResult.requirements_count} requirements from document`);
+          
+          // Update document metadata with requirements info
+          const { error: updateError } = await client
+            .from('documents')
+            .update({
+              metadata: {
+                ...documentData.metadata,
+                requirements_processed: true,
+                requirements_count: requirementsResult.requirements_count,
+                requirements_by_section: requirementsResult.requirements_by_section,
+                processed_at: new Date().toISOString()
+              }
+            })
+            .eq('id', documentId);
+            
+          if (updateError) {
+            console.error('Error updating document with requirements metadata:', updateError);
+          }
+        } else {
+          console.error('Failed to extract requirements:', requirementsResult);
+        }
+      } catch (requirementsError) {
+        console.error('Error extracting requirements:', requirementsError);
+        // Continue without failing the entire process
+      }
+    }
+    
+    // 8. Clean up temporary file
     fs.unlinkSync(fileInfo.path);
     console.log('Document processing complete');
     

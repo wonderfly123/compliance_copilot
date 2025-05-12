@@ -45,6 +45,22 @@ const getGeminiResponse = async (prompt, options = {}) => {
   }
 };
 
+/**
+ * Helper function to get the text content from a Gemini response
+ * @param {Object} response - The Gemini API response
+ * @returns {string} - The extracted text
+ */
+const getTextFromGeminiResponse = (response) => {
+  if (!response) return '';
+  
+  try {
+    return response.text();
+  } catch (error) {
+    console.error('Error extracting text from Gemini response:', error);
+    return '';
+  }
+};
+
 // ===== GAP ANALYSIS AI FUNCTIONALITY =====
 
 /**
@@ -52,14 +68,77 @@ const getGeminiResponse = async (prompt, options = {}) => {
  * This AI performs compliance checking and produces metrics output
  */
 class GapAnalysisAI {
+  constructor() {
+    // Initialize with null, will be set when needed
+    this.orchestrator = null;
+  }
+
+  /**
+   * Get the GapAnalysisOrchestrator instance
+   * This is lazy-loaded to avoid circular dependencies
+   * @returns {Object} - The orchestrator instance
+   */
+  getOrchestrator() {
+    if (!this.orchestrator) {
+      // Require here to avoid circular dependencies
+      const GapAnalysisOrchestrator = require('./gapAnalysisOrchestrator');
+      // Create a new instance of the orchestrator
+      this.orchestrator = new GapAnalysisOrchestrator();
+    }
+    return this.orchestrator;
+  }
+
   /**
    * Analyze a plan against reference standards
    * @param {string} planContent - The content of the plan to analyze
    * @param {Array} referenceStandards - Array of reference standard chunks to compare against
    * @param {string} planType - Type of plan (EOP, HMP, COOP, etc.)
+   * @param {string} planId - ID of the plan being analyzed (optional)
    * @returns {Promise<Object>} - Analysis results with compliance findings
    */
-  async analyzePlan(planContent, referenceStandards, planType) {
+  async analyzePlan(planContent, referenceStandards, planType, planId = null) {
+    console.log('Using enhanced multi-agent analysis system');
+    
+    try {
+      // Using the new multi-agent architecture through the orchestrator
+      // First, we need to determine which reference IDs to use
+      // For now, we have to extract them from the chunks
+      const referenceIds = [...new Set(referenceStandards.map(ref => ref.reference_id))];
+      
+      // Use the provided plan ID or a temporary one
+      const actualPlanId = planId || 'temporary-plan-id';
+      
+      // Call the orchestrator's analyze method
+      const result = await this.getOrchestrator().orchestrateAnalysis(
+        "analyze_plan", 
+        {
+          plan_content: planContent,
+          reference_ids: referenceIds,
+          plan_type: planType,
+          plan_id: actualPlanId
+        }
+      );
+      
+      // Convert the result to match the expected format from the old implementation
+      // This ensures backward compatibility with the rest of the application
+      return this.convertToLegacyFormat(result.report);
+    } catch (error) {
+      console.error('Error in enhanced Gap Analysis:', error);
+      
+      // Fall back to the legacy method if the enhanced system fails
+      console.log('Falling back to legacy analysis method');
+      return this.legacyAnalyzePlan(planContent, referenceStandards, planType);
+    }
+  }
+  
+  /**
+   * Legacy implementation for backward compatibility
+   * @param {string} planContent - The content of the plan to analyze
+   * @param {Array} referenceStandards - Array of reference standard chunks to compare against
+   * @param {string} planType - Type of plan (EOP, HMP, COOP, etc.)
+   * @returns {Promise<Object>} - Analysis results with compliance findings
+   */
+  async legacyAnalyzePlan(planContent, referenceStandards, planType) {
     const referencesText = referenceStandards.map(ref => 
       `Reference ID: ${ref.reference_id}\nSection: ${ref.chunk_text}`
     ).join('\n\n');
@@ -141,7 +220,7 @@ class GapAnalysisAI {
       });
       
       // Extract the JSON part from the response
-      const responseText = response.text();
+      const responseText = getTextFromGeminiResponse(response);
       console.log('Raw AI response:', responseText);
       
       // Try multiple approaches to extract JSON
@@ -238,6 +317,78 @@ class GapAnalysisAI {
     } catch (error) {
       console.error('Error in Gap Analysis AI:', error);
       throw new Error('Failed to analyze plan with Gap Analysis AI');
+    }
+  }
+  
+  /**
+   * Convert the multi-agent report to the legacy format
+   * @param {Object} report - The report from the orchestrator
+   * @returns {Object} - Analysis data in the legacy format
+   */
+  convertToLegacyFormat(report) {
+    // Create a structure that matches the expected format from the old implementation
+    try {
+      const legacyFormat = {
+        overallScore: report.overall_compliance_score,
+        totalElements: report.summary.total_requirements,
+        presentElements: report.summary.requirements_present,
+        missingElements: report.summary.requirements_missing,
+        missing_elements_count: report.summary.requirements_missing,
+        
+        // Convert missing requirements to the expected format
+        missingElementsList: report.missing_requirements.map(item => ({
+          element: item.text.substring(0, 50) + (item.text.length > 50 ? '...' : ''),
+          description: item.text,
+          isCritical: item.importance === 'critical',
+          referenceSource: `Reference Document - ${item.section}`
+        })),
+        
+        // Convert improvement suggestions to the expected format
+        improvementRecommendations: report.improvement_suggestions.map(item => ({
+          section: item.requirement_text.substring(0, 30) + (item.requirement_text.length > 30 ? '...' : ''),
+          text: item.suggestions[0] || 'Improve language quality',
+          currentText: item.requirement_text,
+          recommendedChange: item.suggestions.join('; '),
+          importance: item.quality_rating === 'poor' ? 'high' : item.quality_rating === 'adequate' ? 'medium' : 'low',
+          referenceSource: `Quality Evaluation - ${item.requirement_id}`
+        })),
+        
+        // Create references used section
+        referencesUsed: [
+          {
+            title: "Enhanced Requirements Analysis",
+            type: "Multi-agent compliance analysis",
+            sections: Object.keys(report.section_scores || {})
+          }
+        ],
+        
+        // Add thinking process explanation
+        analysisReasoning: {
+          referencesAnalysis: "Requirements were extracted from reference documents and structured by section and importance.",
+          planEvaluation: "Each requirement was individually checked for presence and quality of implementation.",
+          prioritization: "Requirements were prioritized based on their importance classification (critical, important, recommended).",
+          scoringMethod: "Compliance score calculated as percentage of requirements present. Quality score calculated based on language clarity, specificity, and actionability."
+        },
+        
+        // Support for UI elements
+        sectionScores: Object.entries(report.section_scores || {}).map(([section, scores]) => ({
+          section: section,
+          score: scores.compliance,
+          items: scores.requirements_total,
+          missing: scores.requirements_total - scores.requirements_present
+        })),
+        
+        // Legacy fields
+        criticalGaps: [],
+        criticalGaps_count: report.missing_requirements.filter(item => item.importance === 'critical').length,
+        criticalSections: report.missing_requirements.filter(item => item.importance === 'critical').length,
+        recommendations: []
+      };
+      
+      return legacyFormat;
+    } catch (error) {
+      console.error('Error converting to legacy format:', error);
+      throw new Error('Failed to convert multi-agent analysis to legacy format');
     }
   }
 }
@@ -607,7 +758,8 @@ const gapAnalysisAI = new GapAnalysisAI();
 const copilotAI = new CopilotAI();
 
 module.exports = {
-  getGeminiResponse,  // Base function
-  gapAnalysisAI,      // Gap Analysis AI instance
-  copilotAI,          // Copilot AI instance
+  getGeminiResponse,          // Base function
+  getTextFromGeminiResponse,  // Helper function
+  gapAnalysisAI,              // Gap Analysis AI instance
+  copilotAI,                  // Copilot AI instance
 };

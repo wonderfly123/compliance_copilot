@@ -342,11 +342,12 @@ exports.updateReference = async (req, res) => {
 exports.deleteReference = async (req, res) => {
   try {
     const { id } = req.params;
+    const GapAnalysisOrchestrator = require('../services/gapAnalysisOrchestrator');
     
     // Check if reference document exists and get file_url
     const { data: refDoc, error: checkError } = await supabase
       .from('documents')
-      .select('file_url')
+      .select('file_url, title')
       .eq('id', id)
       .eq('document_type', 'reference')
       .single();
@@ -356,6 +357,43 @@ exports.deleteReference = async (req, res) => {
         success: false,
         message: 'Reference document not found'
       });
+    }
+    
+    // Try to delete the requirements first, but don't stop if this fails
+    try {
+      // Use direct database operations instead of the orchestrator
+      console.log('Deleting requirements associated with document:', id);
+      
+      // First get all requirement IDs linked to this document
+      const { data: requirementLinks, error: linksError } = await supabase
+        .from('requirement_sources')
+        .select('requirement_id')
+        .eq('document_id', id);
+        
+      if (linksError) {
+        console.error('Error fetching requirement links:', linksError);
+      } else if (requirementLinks && requirementLinks.length > 0) {
+        // Extract the requirement IDs
+        const reqIds = requirementLinks.map(link => link.requirement_id);
+        console.log(`Found ${reqIds.length} requirements to delete`);
+        
+        // Delete the requirements (cascade will handle requirement_sources)
+        const { error: reqDeleteError } = await supabase
+          .from('requirements')
+          .delete()
+          .in('id', reqIds);
+          
+        if (reqDeleteError) {
+          console.error('Error deleting requirements:', reqDeleteError);
+        } else {
+          console.log(`Successfully deleted ${reqIds.length} requirements`);
+        }
+      } else {
+        console.log('No requirements found for this document');
+      }
+    } catch (requirementsError) {
+      console.error('Error in requirements deletion process:', requirementsError);
+      // Continue with document deletion even if requirements deletion fails
     }
     
     // Delete the reference document from the database
@@ -381,13 +419,20 @@ exports.deleteReference = async (req, res) => {
     
     return res.status(200).json({
       success: true,
-      message: 'Reference document deleted successfully'
+      message: `Reference document "${refDoc.title}" deleted successfully`
     });
   } catch (error) {
     console.error('Error deleting reference document:', error);
+    console.error('Error details:', error.stack);
+    
+    // Check if it's a specific error from the orchestrator
+    if (error.message && error.message.includes('orchestrator')) {
+      console.error('Orchestrator error detected. This might be related to requirements deletion.');
+    }
+    
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete reference document',
+      message: 'Failed to delete reference document: ' + error.message,
       error: error.message
     });
   }

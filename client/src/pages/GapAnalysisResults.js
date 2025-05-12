@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import ComplianceScore from '../components/gapanalysis/ComplianceScore';
-// AnnotatedDocument component removed
+import QualityScore from '../components/gapanalysis/QualityScore';
+import SectionScores from '../components/gapanalysis/SectionScores';
 import RecommendationPanel from '../components/gapanalysis/RecommendationPanel';
 import GapSummary from '../components/gapanalysis/GapSummary';
 import Copilot from '../components/copilot/Copilot';
@@ -255,6 +256,27 @@ const GapAnalysisResults = () => {
     })) || [])
   ];
   
+  // Helper function to get quality findings from improvement suggestions
+  const getQualityFindings = () => {
+    const qualityFindings = [];
+    
+    if (analysisResults?.improvementRecommendations) {
+      analysisResults.improvementRecommendations.forEach(rec => {
+        // Convert importance to quality rating
+        const qualityRating = rec.importance === 'high' ? 'poor' : 
+                              rec.importance === 'medium' ? 'adequate' : 'excellent';
+        
+        qualityFindings.push({
+          requirement_id: rec.id,
+          quality_rating: qualityRating,
+          suggestions: [rec.recommendedChange]
+        });
+      });
+    }
+    
+    return qualityFindings;
+  };
+
   return (
     <div className="content-area">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
@@ -282,32 +304,95 @@ const GapAnalysisResults = () => {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left column - Compliance score and recommendations */}
-        <div className="md:col-span-1">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left column - Compliance and quality scores */}
+        <div>
           <ComplianceScore 
             score={analysisResults?.overallScore} 
             missingElements={analysisResults?.missingElementsList || []} 
             criticalSections={analysisResults?.criticalSections || 0}
           />
           
-          {/* Moved Recommendations panel here */}
+          {/* Add Quality Score component if quality_score exists */}
+          {analysisResults?.quality_score && (
+            <QualityScore 
+              score={analysisResults.quality_score}
+              qualityFindings={getQualityFindings()}
+            />
+          )}
+          
+          {/* Section Scores component */}
+          {analysisResults?.section_scores && (
+            <SectionScores 
+              sectionScores={analysisResults.section_scores}
+              onSectionClick={handleSectionClick}
+            />
+          )}
+        </div>
+        
+        {/* Middle column - Recommendations */}
+        <div>
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h3 className="text-lg font-semibold mb-4">Analysis Summary</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-500">Total Requirements</span>
+                <span className="font-semibold">{analysisResults?.totalElements || analysisResults?.summary?.total_requirements || 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-500">Present Requirements</span>
+                <span className="font-semibold">{analysisResults?.presentElements || analysisResults?.summary?.requirements_present || 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-500">Missing Requirements</span>
+                <span className="font-semibold">{analysisResults?.missingElements || analysisResults?.summary?.requirements_missing || 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-500">Sections Analyzed</span>
+                <span className="font-semibold">{analysisResults?.summary?.sections_analyzed || Object.keys(analysisResults?.section_scores || {}).length || 0}</span>
+              </div>
+              
+              <div className="border-t pt-4 mt-4">
+                <h4 className="font-medium mb-2">Reference Standards Used</h4>
+                <ul className="list-disc pl-5 text-sm text-gray-600">
+                  {analysisResults?.referencesUsed?.map((ref, idx) => (
+                    <li key={idx}>{ref.title}</li>
+                  )) || <li>No reference information available</li>}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Recommendations panel */}
           <RecommendationPanel 
             recommendations={recommendations}
             activeSection={activeSectionId}
           />
         </div>
         
-        {/* Right columns - Document with annotations */}
-        <div className="md:col-span-2">
-          {/* Document viewing functionality to be implemented differently */}
-          <div className="bg-white rounded-lg shadow-md mb-6 p-6 text-center">
+        {/* Right column - Missing elements and future document view */}
+        <div>
+          {/* Critical Missing Elements */}
+          <GapSummary 
+            criticalGaps={(analysisResults?.missingElementsList || [])
+              .filter(gap => gap.isCritical)
+              .map(gap => ({
+                id: gap.element,
+                section: gap.section || 'Missing Element',
+                description: gap.description,
+                referenceSource: gap.referenceSource
+              }))}
+            onSectionClick={handleSectionClick}
+          />
+          
+          {/* Document viewing functionality placeholder */}
+          <div className="bg-white rounded-lg shadow-md mt-6 p-6 text-center">
             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <h3 className="mt-2 text-lg font-medium">Document content view coming soon</h3>
             <p className="mt-1 text-gray-600">
-              A new document viewing interface is being developed. Please check recommendations below.
+              A new document viewing interface is being developed. Please check recommendations.
             </p>
           </div>
         </div>

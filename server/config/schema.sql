@@ -5,6 +5,7 @@
 --   1. Documents: Stores both plans and reference documents in a unified table
 --   2. Vector Embeddings: Stores text chunks with vector embeddings for semantic search
 --   3. Plan Analysis: Stores results of AI-driven gap analysis between plans and reference documents
+--   4. Requirements: Stores structured requirements extracted from reference documents
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS vector;     -- For vector similarity search using pgvector
@@ -59,6 +60,46 @@ CREATE TABLE IF NOT EXISTS vector_embeddings (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() -- Creation timestamp
 );
 
+-- Requirements Table - Stores structured requirements extracted from reference documents
+CREATE TABLE IF NOT EXISTS requirements (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  text TEXT NOT NULL,                    -- The actual requirement text
+  section VARCHAR(100) NOT NULL,         -- Which section of a plan this applies to
+  importance VARCHAR(20) NOT NULL,       -- critical, important, or recommended
+  source_section VARCHAR(255),           -- Section in the reference document
+  keywords TEXT[],                       -- Keywords for searching
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Requirement Sources Table - Maps requirements to source documents
+-- Using ON DELETE CASCADE to ensure when a document is deleted, all its requirements are also deleted
+CREATE TABLE IF NOT EXISTS requirement_sources (
+  requirement_id UUID REFERENCES requirements(id) ON DELETE CASCADE,
+  document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+  PRIMARY KEY (requirement_id, document_id)
+);
+
+-- Standard Mappings Table - Maps equivalent requirements across standards
+CREATE TABLE IF NOT EXISTS standard_mappings (
+  requirement_id_1 UUID REFERENCES requirements(id) ON DELETE CASCADE,
+  requirement_id_2 UUID REFERENCES requirements(id) ON DELETE CASCADE,
+  relationship_type VARCHAR(50) NOT NULL, -- equivalent, related, etc.
+  PRIMARY KEY (requirement_id_1, requirement_id_2)
+);
+
+-- Analysis Findings Table - Stores detailed findings for each requirement
+CREATE TABLE IF NOT EXISTS analysis_findings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  analysis_id UUID REFERENCES plan_analysis(id) ON DELETE CASCADE,
+  requirement_id UUID REFERENCES requirements(id) ON DELETE CASCADE,
+  is_present BOOLEAN NOT NULL,
+  quality_rating VARCHAR(20),            -- poor, adequate, excellent
+  evidence TEXT,                         -- Text evidence from the plan
+  location VARCHAR(255),                 -- Where in the plan it was found
+  recommendations TEXT,                  -- Improvement recommendations
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create index for vector search
 -- This optimizes vector similarity search performance using the IVFFlat algorithm
 CREATE INDEX IF NOT EXISTS vector_embeddings_idx ON vector_embeddings 
@@ -107,7 +148,10 @@ CREATE TABLE IF NOT EXISTS plan_analysis (
   missing_elements_count INTEGER NOT NULL DEFAULT 0, -- Number of missing elements found
   analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- When analysis was performed
   analysis_data JSONB,                      -- Detailed analysis results
-  created_by UUID REFERENCES users(id)      -- User who initiated the analysis
+  created_by UUID REFERENCES users(id),      -- User who initiated the analysis
+  quality_score NUMERIC(5,2),               -- Overall quality score
+  section_scores JSONB,                     -- Scores broken down by section
+  standards_used UUID[]                     -- Reference standards used in analysis
 );
 
 -- Trigger to update the updated_at timestamp
@@ -153,6 +197,10 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;              -- Protect user accoun
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;          -- Protect documents
 ALTER TABLE vector_embeddings ENABLE ROW LEVEL SECURITY;  -- Protect embeddings
 ALTER TABLE plan_analysis ENABLE ROW LEVEL SECURITY;      -- Protect analysis results
+ALTER TABLE requirements ENABLE ROW LEVEL SECURITY;       -- Protect requirements
+ALTER TABLE requirement_sources ENABLE ROW LEVEL SECURITY; -- Protect requirement sources
+ALTER TABLE standard_mappings ENABLE ROW LEVEL SECURITY;  -- Protect standard mappings
+ALTER TABLE analysis_findings ENABLE ROW LEVEL SECURITY;  -- Protect analysis findings
 
 -- Create policies for documents table
 -- These policies control which rows users can access in the documents table
@@ -199,6 +247,54 @@ ON plan_analysis
 FOR SELECT                       -- For SELECT operations
 TO authenticated                 -- Only authenticated users
 USING (true);                    -- Can view all analysis results
+
+-- Create policies for requirements table
+CREATE POLICY "Users can insert requirements" 
+ON requirements 
+FOR INSERT                       -- For INSERT operations
+TO authenticated;                -- Only authenticated users
+
+CREATE POLICY "Users can view requirements" 
+ON requirements 
+FOR SELECT                       -- For SELECT operations
+TO authenticated                 -- Only authenticated users
+USING (true);                    -- Can view all requirements
+
+-- Create policies for requirement_sources table
+CREATE POLICY "Users can insert requirement sources" 
+ON requirement_sources 
+FOR INSERT                       -- For INSERT operations
+TO authenticated;                -- Only authenticated users
+
+CREATE POLICY "Users can view requirement sources" 
+ON requirement_sources 
+FOR SELECT                       -- For SELECT operations
+TO authenticated                 -- Only authenticated users
+USING (true);                    -- Can view all requirement sources
+
+-- Create policies for standard_mappings table
+CREATE POLICY "Users can insert standard mappings" 
+ON standard_mappings 
+FOR INSERT                       -- For INSERT operations
+TO authenticated;                -- Only authenticated users
+
+CREATE POLICY "Users can view standard mappings" 
+ON standard_mappings 
+FOR SELECT                       -- For SELECT operations
+TO authenticated                 -- Only authenticated users
+USING (true);                    -- Can view all standard mappings
+
+-- Create policies for analysis_findings table
+CREATE POLICY "Users can insert analysis findings" 
+ON analysis_findings 
+FOR INSERT                       -- For INSERT operations
+TO authenticated;                -- Only authenticated users
+
+CREATE POLICY "Users can view analysis findings" 
+ON analysis_findings 
+FOR SELECT                       -- For SELECT operations
+TO authenticated                 -- Only authenticated users
+USING (true);                    -- Can view all analysis findings
 
 -- Add a sample admin user for testing
 -- This creates an initial administrator account that can be used to set up the system

@@ -2,6 +2,7 @@
 const supabase = require('../config/supabase');
 const { createEmbedding } = require('../services/embedding');
 const { gapAnalysisAI, copilotAI } = require('../services/gemini');
+const GapAnalysisOrchestrator = require('../services/gapAnalysisOrchestrator');
 
 /**
  * Analyze a plan and generate compliance score
@@ -122,10 +123,15 @@ exports.analyzePlan = async (req, res) => {
     console.log('Using reference chunks:', referenceChunks.length);
     
     try {
+      // Get reference document IDs for multi-agent system
+      const referenceIds = [...new Set(referenceChunks.map(chunk => chunk.reference_id))];
+      console.log('Reference document IDs for analysis:', referenceIds);
+      
       const analysisResults = await gapAnalysisAI.analyzePlan(
         planText,
         referenceChunks,
-        plan.doc_subtype
+        plan.doc_subtype,
+        planId  // Pass the actual plan ID to the analysis
       );
       
       // Ensure we have valid analysis results
@@ -793,5 +799,415 @@ function getComplianceClassification(score) {
   if (score >= 41) return 'Moderate Compliance (41-70% range)';
   return 'Significant Improvements Needed (0-40% range)';
 }
+
+/**
+ * Process a reference document to extract requirements
+ */
+exports.processReferenceDocument = async (req, res) => {
+  try {
+    const { documentId } = req.body;
+
+    if (!documentId) {
+      return res.status(400).json({ success: false, message: 'Document ID is required' });
+    }
+
+    // Verify document exists and is a reference document
+    const { data: document, error: docError } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', documentId)
+      .eq('document_type', 'reference')
+      .single();
+
+    if (docError || !document) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Reference document not found' 
+      });
+    }
+
+    // Create orchestrator instance
+    const orchestrator = new GapAnalysisOrchestrator();
+
+    // Process the document
+    console.log(`Starting requirement extraction for document: ${documentId}`);
+    const result = await orchestrator.orchestrateAnalysis('process_reference', { document_id: documentId });
+
+    if (!result || !result.success) {
+      throw new Error('Failed to process reference document');
+    }
+
+    console.log(`Successfully processed reference document: ${result.requirements_count} requirements extracted`);
+
+    // Update document status to indicate it's been processed
+    const { error: updateError } = await supabase
+      .from('documents')
+      .update({
+        metadata: {
+          ...document.metadata,
+          requirements_processed: true,
+          requirements_count: result.requirements_count,
+          processed_at: new Date().toISOString()
+        },
+        status: 'active'
+      })
+      .eq('id', documentId);
+
+    if (updateError) {
+      console.error('Error updating document status:', updateError);
+      // Continue execution and just report the warning
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        document_id: documentId,
+        document_title: document.title,
+        requirements_count: result.requirements_count,
+        sections_processed: Object.keys(result.requirements_by_section || {}).length,
+        requirements_by_section: result.requirements_by_section || {}
+      }
+    });
+  } catch (error) {
+    console.error('Error processing reference document:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while processing the reference document',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Delete a reference document and its associated requirements
+ */
+exports.deleteReferenceDocument = async (req, res) => {
+  try {
+    const { documentId } = req.params;
+
+    if (!documentId) {
+      return res.status(400).json({ success: false, message: 'Document ID is required' });
+    }
+
+    // Verify document exists and is a reference document
+    const { data: document, error: docError } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', documentId)
+      .eq('document_type', 'reference')
+      .single();
+
+    if (docError || !document) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Reference document not found' 
+      });
+    }
+
+    // Create orchestrator instance
+    const orchestrator = new GapAnalysisOrchestrator();
+
+    // Delete requirements associated with the document
+    console.log(`Deleting requirements for document: ${documentId}`);
+    const result = await orchestrator.orchestrateAnalysis('delete_reference', { document_id: documentId });
+
+    if (!result || !result.success) {
+      throw new Error('Failed to delete reference requirements');
+    }
+
+    console.log(`Successfully deleted ${result.deleted_requirements_count} requirements for document: ${documentId}`);
+
+    // Delete the document from storage
+    if (document.file_url) {
+      const { error: storageError } = await supabase
+        .storage
+        .from('reference-documents')
+        .remove([document.file_url]);
+
+      if (storageError) {
+        console.warn('Error deleting document from storage:', storageError);
+        // Continue execution even if storage deletion fails
+      }
+    }
+
+    // Delete the document from the database
+    const { error: deleteError } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', documentId);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete document: ${deleteError.message}`);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        document_id: documentId,
+        document_title: document.title,
+        deleted_requirements_count: result.deleted_requirements_count
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting reference document:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while deleting the reference document',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get all requirements for a reference document
+ */
+exports.getDocumentRequirements = async (req, res) => {
+  try {
+    const { documentId } = req.params;
+
+    if (!documentId) {
+      return res.status(400).json({ success: false, message: 'Document ID is required' });
+    }
+
+    // Verify document exists and is a reference document
+    const { data: document, error: docError } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', documentId)
+      .eq('document_type', 'reference')
+      .single();
+
+    if (docError || !document) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Reference document not found' 
+      });
+    }
+
+    // Get requirement IDs for this document
+    const { data: requirementSources, error: sourcesError } = await supabase
+      .from('requirement_sources')
+      .select('requirement_id')
+      .eq('document_id', documentId);
+
+    if (sourcesError) {
+      throw new Error(`Failed to retrieve requirement sources: ${sourcesError.message}`);
+    }
+
+    if (!requirementSources || requirementSources.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          document_id: documentId,
+          document_title: document.title,
+          requirements: []
+        }
+      });
+    }
+
+    // Get the actual requirements
+    const requirementIds = requirementSources.map(source => source.requirement_id);
+    const { data: requirements, error: reqError } = await supabase
+      .from('requirements')
+      .select('*')
+      .in('id', requirementIds);
+
+    if (reqError) {
+      throw new Error(`Failed to retrieve requirements: ${reqError.message}`);
+    }
+
+    // Group requirements by section
+    const requirementsBySection = {};
+    for (const req of requirements || []) {
+      if (!requirementsBySection[req.section]) {
+        requirementsBySection[req.section] = [];
+      }
+      requirementsBySection[req.section].push(req);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        document_id: documentId,
+        document_title: document.title,
+        requirements_count: requirements ? requirements.length : 0,
+        requirements: requirements || [],
+        requirements_by_section: requirementsBySection
+      }
+    });
+  } catch (error) {
+    console.error('Error retrieving document requirements:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while retrieving requirements',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Reconcile requirements across multiple reference standards
+ */
+exports.reconcileRequirements = async (req, res) => {
+  try {
+    const { referenceIds } = req.body;
+
+    if (!referenceIds || !Array.isArray(referenceIds) || referenceIds.length < 2) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'At least two reference document IDs are required' 
+      });
+    }
+
+    // Verify documents exist and are reference documents
+    const { data: documents, error: docsError } = await supabase
+      .from('documents')
+      .select('id, title')
+      .in('id', referenceIds)
+      .eq('document_type', 'reference');
+
+    if (docsError) {
+      throw new Error(`Failed to retrieve reference documents: ${docsError.message}`);
+    }
+
+    if (!documents || documents.length < 2) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'At least two valid reference documents are required' 
+      });
+    }
+
+    // Create orchestrator instance
+    const orchestrator = new GapAnalysisOrchestrator();
+
+    // Reconcile requirements
+    console.log(`Reconciling requirements across ${referenceIds.length} documents`);
+    const result = await orchestrator.orchestrateAnalysis('reconcile_requirements', { reference_ids: referenceIds });
+
+    if (!result || !result.success) {
+      throw new Error('Failed to reconcile requirements');
+    }
+
+    console.log(`Successfully reconciled requirements: ${result.mappings_found} mappings found`);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        reference_documents: documents,
+        sections_processed: result.sections_processed,
+        mappings_found: result.mappings_found
+      }
+    });
+  } catch (error) {
+    console.error('Error reconciling requirements:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while reconciling requirements',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get analysis findings details
+ */
+exports.getAnalysisFindings = async (req, res) => {
+  try {
+    const { analysisId } = req.params;
+
+    if (!analysisId) {
+      return res.status(400).json({ success: false, message: 'Analysis ID is required' });
+    }
+
+    // Get the analysis findings
+    const { data: findings, error: findingsError } = await supabase
+      .from('analysis_findings')
+      .select(`
+        id,
+        is_present,
+        quality_rating,
+        evidence,
+        location,
+        recommendations,
+        created_at,
+        requirement_id,
+        requirements:requirement_id (*)
+      `)
+      .eq('analysis_id', analysisId);
+
+    if (findingsError) {
+      throw new Error(`Failed to retrieve analysis findings: ${findingsError.message}`);
+    }
+
+    // Get the analysis metadata
+    const { data: analysis, error: analysisError } = await supabase
+      .from('plan_analysis')
+      .select(`
+        id,
+        plan_id,
+        overall_score,
+        quality_score,
+        section_scores,
+        missing_elements_count,
+        analyzed_at,
+        documents:plan_id (title, doc_subtype)
+      `)
+      .eq('id', analysisId)
+      .single();
+
+    if (analysisError) {
+      throw new Error(`Failed to retrieve analysis metadata: ${analysisError.message}`);
+    }
+
+    // Group findings by section and status
+    const findingsBySection = {};
+    const presentFindings = [];
+    const missingFindings = [];
+
+    for (const finding of findings || []) {
+      const section = finding.requirements?.section || 'Unknown';
+      
+      if (!findingsBySection[section]) {
+        findingsBySection[section] = {
+          present: [],
+          missing: []
+        };
+      }
+      
+      if (finding.is_present) {
+        findingsBySection[section].present.push(finding);
+        presentFindings.push(finding);
+      } else {
+        findingsBySection[section].missing.push(finding);
+        missingFindings.push(finding);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        analysis_id: analysisId,
+        plan_id: analysis.plan_id,
+        plan_title: analysis.documents?.title || 'Unknown Plan',
+        plan_type: analysis.documents?.doc_subtype || 'Unknown Type',
+        overall_score: analysis.overall_score,
+        quality_score: analysis.quality_score,
+        analyzed_at: analysis.analyzed_at,
+        findings_count: findings ? findings.length : 0,
+        present_count: presentFindings.length,
+        missing_count: missingFindings.length,
+        findings_by_section: findingsBySection,
+        findings: findings || []
+      }
+    });
+  } catch (error) {
+    console.error('Error retrieving analysis findings:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while retrieving analysis findings',
+      error: error.message
+    });
+  }
+};
 
 module.exports = exports;
